@@ -2,7 +2,7 @@ extends SceneTree
 ## CI regression check of core mechanics.
 
 func _initialize() -> void:
-    call_deferred("_run_checks")
+    _run_checks()
 
 func _run_checks() -> void:
     var script := load("res://scripts/game.gd")
@@ -10,7 +10,6 @@ func _run_checks() -> void:
         _fail("Could not load main game script")
         return
     var game = script.new()
-    root.add_child(game)
     game._start_game()
     if game._cell_speed({"mass": 25.0}) <= game._cell_speed({"mass": 200.0}):
         _fail("Smaller cells must be faster")
