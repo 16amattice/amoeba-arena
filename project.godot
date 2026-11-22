@@ -1,0 +1,21 @@
+; Amoeba Arena - Godot 4.7
+config_version=5
+
+[application]
+config/name="Amoeba Arena"
+run/main_scene="res://scenes/main.tscn"
+config/features=PackedStringArray("4.7", "GL Compatibility")
+config/description="Eat, escape, evolve. A mobile amoeba arena."
+config/icon="res://assets/icon.svg"
+
+[display]
+window/size/viewport_width=1280
+window/size/viewport_height=720
+window/stretch/mode="canvas_items"
+window/handheld/orientation=0
+
+[rendering]
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
+environment/defaults/default_clear_color=Color(0.035, 0.065, 0.09, 1)
+textures/default_filters/use_nearest_mipmap_filter=false

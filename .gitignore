@@ -1,0 +1,11 @@
+# Godot generated cache
+.godot/
+*.tmp
+builds/
+*.apk
+*.aab
+*.keystore
+*.jks
+*.p12
+.DS_Store
+Thumbs.db
