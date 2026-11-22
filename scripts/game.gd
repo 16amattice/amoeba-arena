@@ -358,7 +358,7 @@ func _consume_food() -> void:
 		for cell in cells:
 			if not cell["alive"]:
 				continue
-			var radius := _cell_radius(cell) * 0.83 + PICKUP_RADIUS + morsel["radius"]
+			var radius: float = _cell_radius(cell) * 0.83 + PICKUP_RADIUS + float(morsel["radius"])
 			if cell["pos"].distance_squared_to(morsel["pos"]) < radius * radius:
 				cell["mass"] += morsel["mass"]
 				if cell["human"]:
