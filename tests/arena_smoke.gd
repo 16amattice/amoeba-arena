@@ -14,8 +14,21 @@ func _run_checks() -> void:
     if game._cell_speed({"mass": 25.0}) <= game._cell_speed({"mass": 200.0}):
         _fail("Smaller cells must be faster")
         return
+    if game._cell_speed({"mass": 400.0}) < game._cell_speed({"mass": 600.0}) * 1.25:
+        _fail("A 400-mass cell should noticeably outrun a 600-mass cell")
+        return
     if game._cell_radius({"mass": 25.0}) >= game._cell_radius({"mass": 200.0}):
         _fail("Larger cells must have larger bodies")
+        return
+    game.touch_index = 3
+    game.touch_origin = Vector2(50, 50)
+    game.touch_position = Vector2(170, 50)
+    game._release_touch(3)
+    if game.touch_index != -1 or game.mouse_aim or game._move_input() != Vector2.ZERO:
+        _fail("Releasing touch must stop touch-directed movement")
+        return
+    if game._sanitize_username("  Blob King  ") != "Blob King":
+        _fail("Username sanitization should trim surrounding spaces")
         return
     var large = game._make_cell(Vector2(800, 800), 240.0, Color.RED, "LARGE", false)
     var small = game._make_cell(Vector2(808, 800), 60.0, Color.GREEN, "SMALL", false)

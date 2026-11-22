@@ -40,3 +40,14 @@ The current workflow creates a temporary debug signing key each time. These APKs
 ## Scope and roadmap
 
 This is a single-player prototype, not online multiplayer yet. Sound, lobbies, skins, matchmaking, abilities, and balancing remain future work. Godot is open source and subject to its own license; the prototype was written for this project.
+
+## Prototype 0.2 feedback updates
+
+- Portrait Android layout (720 × 1280 design resolution).
+- New speed curve with a pronounced escape advantage at 400 versus 600 mass.
+- Touch release clears drag/mouse input and immediately stops your cell.
+- Slight pellet pickup margin; configurable via `PICKUP_RADIUS` in `scripts/game.gd`.
+- Deeper, rounded bite-shaped notches and extra impact particles.
+- Start menu lets you type a username (saved locally) which appears above your amoeba and in the live, mass-ranked leaderboard with AI.
+
+This leaderboard is **local to your current offline arena**. It is not an online global ranking.

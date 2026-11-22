@@ -7,7 +7,8 @@ const FOOD_COUNT = 730
 const BOT_COUNT = 19
 const GRID_SPACING = 150
 const BITE_MARK_SECONDS = 2.5
-const CELL_VERTICES = 48
+const CELL_VERTICES = 64
+const PICKUP_RADIUS = 18.0  # Small pellet collection bonus; future upgrade hook.
 const CELL_COLORS = [
 	Color(0.98, 0.43, 0.56), Color(0.65, 0.55, 1.0),
 	Color(0.36, 0.74, 1.0), Color(1.0, 0.70, 0.35),
@@ -42,12 +43,17 @@ var best_mass := 0
 var survival_time := 0.0
 var takedowns := 0
 var damage_flash := 0.0
+var username := "YOU"
+var name_entry: LineEdit
+var start_button: Button
 
 
 func _ready() -> void:
 	randomize()
 	_load_record()
+	_load_username()
 	_reset_arena()
+	_setup_menu_controls()
 	set_process(true)
 
 
@@ -61,7 +67,7 @@ func _reset_arena() -> void:
 	damage_flash = 0.0
 	touch_index = -1
 	mouse_aim = false
-	player = _make_cell(ARENA * 0.5, 100.0, Color(0.26, 0.94, 0.78), "YOU", true)
+	player = _make_cell(ARENA * 0.5, 100.0, Color(0.26, 0.94, 0.78), username, true)
 	cells.append(player)
 	for n in range(BOT_COUNT):
 		_spawn_bot(n)
@@ -85,6 +91,7 @@ func _make_cell(position: Vector2, mass: float, color: Color, label: String, hum
 		"aim": position,
 		"think": randf_range(0.05, 0.55),
 		"marks": [],
+		"impact": 0.0,
 		"last_mark": -10.0,
 		"food_count": 0
 	}
@@ -113,37 +120,106 @@ func _make_food() -> Dictionary:
 
 
 func _start_game() -> void:
+	username = _sanitize_username(name_entry.text)
+	_save_username()
 	_reset_arena()
 	mode = "playing"
+	name_entry.visible = false
+	start_button.visible = false
+	name_entry.release_focus()
+	DisplayServer.virtual_keyboard_hide()
+
+
+func _sanitize_username(value: String) -> String:
+	var clean := value.strip_edges()
+	var valid := ""
+	for i in range(clean.length()):
+		var code := clean.unicode_at(i)
+		if code >= 32 and code != 127:
+			valid += clean.substr(i, 1)
+	valid = valid.substr(0, 14).strip_edges()
+	return valid if not valid.is_empty() else "YOU"
+
+
+func _setup_menu_controls() -> void:
+	name_entry = LineEdit.new()
+	name_entry.name = "UsernameEntry"
+	name_entry.placeholder_text = "Your cell name"
+	name_entry.max_length = 14
+	name_entry.text = username
+	name_entry.add_theme_font_size_override("font_size", 30)
+	name_entry.alignment = HORIZONTAL_ALIGNMENT_CENTER
+	name_entry.text_submitted.connect(_on_name_submitted)
+	add_child(name_entry)
+
+	start_button = Button.new()
+	start_button.name = "PlayButton"
+	start_button.text = "ENTER THE ARENA"
+	start_button.add_theme_font_size_override("font_size", 29)
+	start_button.pressed.connect(_start_game)
+	add_child(start_button)
+	_layout_menu_controls()
+
+
+func _on_name_submitted(_submitted: String) -> void:
+	if mode == "menu":
+		_start_game()
+
+
+func _menu_geometry(screen: Vector2) -> Rect2:
+	var width := minf(630.0, screen.x - 32.0)
+	var height := 445.0
+	var top := maxf(30.0, (screen.y - height) * 0.34)
+	return Rect2((screen.x - width) * 0.5, top, width, height)
+
+
+func _layout_menu_controls() -> void:
+	if name_entry == null or start_button == null:
+		return
+	var bounds := _menu_geometry(get_viewport_rect().size)
+	var margin := minf(48.0, bounds.size.x * 0.07)
+	name_entry.position = bounds.position + Vector2(margin, 257.0)
+	name_entry.size = Vector2(bounds.size.x - margin * 2.0, 56.0)
+	start_button.position = bounds.position + Vector2(margin, 336.0)
+	start_button.size = Vector2(bounds.size.x - margin * 2.0, 64.0)
+	name_entry.visible = mode == "menu"
+	start_button.visible = mode != "playing"
+	if mode == "dead":
+		start_button.text = "PLAY AGAIN"
+	elif mode == "menu":
+		start_button.text = "ENTER THE ARENA"
 
 
 func _input(event: InputEvent) -> void:
 	if mode != "playing":
-		if event is InputEventScreenTouch and event.pressed:
-			_start_game()
-			touch_index = event.index
-			touch_origin = event.position
-			touch_position = event.position
-		elif event is InputEventMouseButton and event.pressed and event.button_index == MOUSE_BUTTON_LEFT:
-			_start_game()
-			mouse_aim = true
-			mouse_position = event.position
-		elif event is InputEventKey and event.pressed and not event.echo:
-			_start_game()
 		return
 
+	# Android sends both touch and synthetic mouse events. Touch is authoritative
+	# on phones; a leftover mouse position must never move the cell after release.
 	if event is InputEventScreenTouch:
 		if event.pressed and touch_index == -1:
 			touch_index = event.index
 			touch_origin = event.position
 			touch_position = event.position
+			mouse_aim = false
 		elif not event.pressed and event.index == touch_index:
-			touch_index = -1
+			_release_touch(event.index)
 	elif event is InputEventScreenDrag and event.index == touch_index:
 		touch_position = event.position
-	elif event is InputEventMouseMotion:
+	elif event is InputEventMouseButton and not OS.has_feature("mobile"):
+		if event.button_index == MOUSE_BUTTON_LEFT:
+			mouse_aim = event.pressed
+			mouse_position = event.position
+	elif event is InputEventMouseMotion and mouse_aim and not OS.has_feature("mobile"):
 		mouse_position = event.position
-		mouse_aim = true
+
+
+func _release_touch(index: int) -> void:
+	if index == touch_index:
+		touch_index = -1
+		touch_origin = Vector2.ZERO
+		touch_position = Vector2.ZERO
+		mouse_aim = false
 
 
 func _process(delta: float) -> void:
@@ -167,6 +243,8 @@ func _process(delta: float) -> void:
 	else:
 		for cell in cells:
 			cell["phase"] += delta * 0.8
+	if mode != "playing":
+		_layout_menu_controls()
 	queue_redraw()
 
 
@@ -197,7 +275,7 @@ func _cell_radius(cell: Dictionary) -> float:
 
 func _cell_speed(cell: Dictionary) -> float:
 	# Core trade-off: losing mass makes you quicker, without a speed boost button.
-	return clampf(368.0 - 13.0 * sqrt(maxf(0.0, cell["mass"])), 85.0, 335.0)
+	return clampf(470.0 * pow(100.0 / maxf(2.0, cell["mass"]), 0.66), 86.0, 600.0)
 
 
 func _think_for_bots(delta: float) -> void:
@@ -254,14 +332,19 @@ func _move_cells(delta: float) -> void:
 			var to_aim: Vector2 = cell["aim"] - cell["pos"]
 			direction = to_aim.normalized() if to_aim.length() > 12.0 else Vector2.ZERO
 		var desired_velocity: Vector2 = direction * _cell_speed(cell)
-		var responsiveness := 6.5 if cell["human"] else 3.7
-		cell["vel"] = cell["vel"].lerp(desired_velocity, minf(1.0, delta * responsiveness))
+		var responsiveness := 9.0 if cell["human"] else 3.7
+		if cell["human"] and direction.length_squared() < 0.0001:
+			# No residual momentum after lifting a finger.
+			cell["vel"] = Vector2.ZERO
+		else:
+			cell["vel"] = cell["vel"].lerp(desired_velocity, minf(1.0, delta * responsiveness))
 		cell["pos"] += cell["vel"] * delta
 		var radius := _cell_radius(cell)
 		cell["pos"] = cell["pos"].clamp(Vector2.ONE * radius, ARENA - Vector2.ONE * radius)
 		if cell["vel"].length() > 8.0:
 			cell["direction"] = lerp_angle(cell["direction"], cell["vel"].angle(), minf(1.0, delta * 4.0))
 		cell["phase"] += delta * (1.65 + cell["vel"].length() * 0.005)
+		cell["impact"] = maxf(0.0, cell["impact"] - delta * 4.0)
 		var marks: Array = cell["marks"]
 		for mark_index in range(marks.size() - 1, -1, -1):
 			marks[mark_index]["life"] -= delta / BITE_MARK_SECONDS
@@ -275,7 +358,7 @@ func _consume_food() -> void:
 		for cell in cells:
 			if not cell["alive"]:
 				continue
-			var radius := _cell_radius(cell) * 0.83
+			var radius := _cell_radius(cell) * 0.83 + PICKUP_RADIUS + morsel["radius"]
 			if cell["pos"].distance_squared_to(morsel["pos"]) < radius * radius:
 				cell["mass"] += morsel["mass"]
 				if cell["human"]:
@@ -318,14 +401,16 @@ func _resolve_bites(delta: float) -> void:
 			eater["mass"] += taken * 0.83
 			if victim["human"]:
 				damage_flash = minf(0.7, damage_flash + taken * 0.012)
-			if clock - victim["last_mark"] >= 0.13:
+			if clock - victim["last_mark"] >= 0.22:
 				victim["last_mark"] = clock
+				victim["impact"] = 1.0
+				eater["impact"] = maxf(eater["impact"], 0.28)
 				var angle: float = (eater["pos"] - victim["pos"]).angle()
 				var marks: Array = victim["marks"]
-				marks.append({"angle": angle, "life": 1.0, "strength": 0.34})
-				if marks.size() > 7:
+				marks.append({"angle": angle, "life": 1.0, "strength": 0.68, "width": 0.51})
+				if marks.size() > 4:
 					marks.pop_front()
-				_spawn_bite_droplets(victim["pos"] + Vector2.RIGHT.rotated(angle) * _cell_radius(victim) * 0.76, victim["color"])
+				_spawn_bite_droplets(victim["pos"] + Vector2.RIGHT.rotated(angle) * _cell_radius(victim) * 0.71, victim["color"])
 			if victim["mass"] <= 1.0:
 				victim["alive"] = false
 				if eater["human"]:
@@ -334,7 +419,7 @@ func _resolve_bites(delta: float) -> void:
 
 
 func _spawn_bite_droplets(position: Vector2, color: Color) -> void:
-	for n in range(3):
+	for n in range(6):
 		particles.append({
 			"pos": position,
 			"vel": Vector2.RIGHT.rotated(randf() * TAU) * randf_range(32.0, 120.0),
@@ -437,15 +522,21 @@ func _draw_cell(cell: Dictionary) -> void:
 	var color: Color = cell["color"]
 	var points := PackedVector2Array()
 	var shine_points := PackedVector2Array()
-	var velocity_amount := clampf(cell["vel"].length() / 300.0, 0.0, 1.0)
+	var velocity_amount := clampf(cell["vel"].length() / 350.0, 0.0, 1.0)
+	var impact: float = cell["impact"]
 	for i in range(CELL_VERTICES):
 		var angle := TAU * float(i) / float(CELL_VERTICES)
 		var wobble := 1.0 + 0.072 * sin(angle * 3.0 + cell["phase"]) + 0.047 * sin(angle * 5.0 - cell["phase"] * 1.2) + 0.028 * sin(angle * 8.0 + cell["phase"] * 1.8)
-		var stretch := 1.0 + 0.12 * velocity_amount * cos(angle - cell["direction"])
+		var stretch := 1.0 + 0.14 * velocity_amount * cos(angle - cell["direction"])
+		# Impact ripples make a bite look like a chomp rather than a health tick.
+		wobble += impact * 0.035 * sin(angle * 7.0 - clock * 25.0)
 		var dent := 1.0
 		for mark in cell["marks"]:
 			var diff := absf(wrapf(angle - mark["angle"], -PI, PI))
-			var influence := exp(-pow(diff / 0.34, 2.0))
+			# A deep, rounded bite notch cut into the actual cell silhouette.
+			var width: float = mark["width"]
+			var ratio: float = clampf(diff / width, 0.0, 1.0)
+			var influence: float = pow(maxf(0.0, 1.0 - ratio * ratio), 2.0)
 			dent -= mark["strength"] * mark["life"] * influence
 		var displacement := Vector2(cos(angle), sin(angle)) * radius * wobble * stretch * maxf(0.30, dent)
 		points.append(center + displacement)
@@ -486,6 +577,7 @@ func _draw_hud(viewport_size: Vector2) -> void:
 			continue
 		var dot: Vector2 = map_rect.position + Vector2(8, 8) + (cell["pos"] / ARENA) * Vector2(144, 144)
 		draw_circle(dot, 4.5 if cell["human"] else 2.5, cell["color"])
+	_draw_leaderboard(viewport_size)
 	if touch_index >= 0 and mode == "playing":
 		draw_circle(touch_origin, 68.0, Color(0.55, 0.92, 0.91, 0.09))
 		draw_arc(touch_origin, 68.0, 0, TAU, 50, Color(0.55, 0.92, 0.91, 0.46), 3.0, true)
@@ -497,28 +589,56 @@ func _draw_hud(viewport_size: Vector2) -> void:
 		draw_string(font, Vector2(viewport_size.x * 0.5 - 200.0, 64), "TINY = FAST  •  ESCAPE AND REGROW!", HORIZONTAL_ALIGNMENT_CENTER, 400.0, 18, Color(1.0, 0.83, 0.57))
 
 
+func _draw_leaderboard(viewport_size: Vector2) -> void:
+	var ranked := cells.duplicate()
+	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["mass"] > b["mass"])
+	var left := viewport_size.x - 244.0
+	var top := 194.0
+	var width := 222.0
+	var row_height := 29.0
+	var rows: Array[Dictionary] = []
+	var user_in_top := false
+	for i in range(mini(7, ranked.size())):
+		rows.append({"cell": ranked[i], "rank": i + 1})
+		if ranked[i]["human"]:
+			user_in_top = true
+	if not user_in_top:
+		for i in range(ranked.size()):
+			if ranked[i]["human"]:
+				rows.append({"cell": ranked[i], "rank": i + 1})
+				break
+	draw_rect(Rect2(left, top, width, 48.0 + rows.size() * row_height + 7.0), Color(0.017, 0.045, 0.06, 0.85))
+	draw_string(ThemeDB.fallback_font, Vector2(left + 12, top + 29), "LEADERBOARD", HORIZONTAL_ALIGNMENT_LEFT, width - 16.0, 21, Color(0.46, 1.0, 0.81))
+	for i in range(rows.size()):
+		var row: Dictionary = rows[i]
+		var cell: Dictionary = row["cell"]
+		var y := top + 54.0 + i * row_height
+		if cell["human"]:
+			draw_rect(Rect2(left + 5, y - 20.0, width - 10.0, row_height - 1.0), Color(0.21, 0.68, 0.53, 0.37))
+		draw_circle(Vector2(left + 15, y - 7.0), 5.0, cell["color"])
+		var entry := str(row["rank"]) + ". " + str(cell["label"])
+		draw_string(ThemeDB.fallback_font, Vector2(left + 28, y), entry, HORIZONTAL_ALIGNMENT_LEFT, 133.0, 17, Color.WHITE if cell["human"] else Color(0.81, 0.93, 0.94))
+		draw_string(ThemeDB.fallback_font, Vector2(left + width - 53, y), str(int(cell["mass"])), HORIZONTAL_ALIGNMENT_RIGHT, 42.0, 17, Color(0.80, 1.0, 0.91))
+
+
 func _draw_overlay(viewport_size: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.01, 0.035, 0.052, 0.71))
-	var font := ThemeDB.fallback_font
-	var width := minf(650.0, viewport_size.x - 38.0)
-	var height := 360.0
-	var left := (viewport_size.x - width) * 0.5
-	var top := (viewport_size.y - height) * 0.5
-	draw_rect(Rect2(left, top, width, height), Color(0.045, 0.13, 0.16, 0.96))
-	draw_rect(Rect2(left, top, width, height), Color(0.36, 0.95, 0.78, 0.58), false, 2.0)
+	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.01, 0.035, 0.052, 0.77))
+	var bounds := _menu_geometry(viewport_size)
+	draw_rect(bounds, Color(0.045, 0.13, 0.16, 0.96))
+	draw_rect(bounds, Color(0.36, 0.95, 0.78, 0.58), false, 2.0)
+	var top := bounds.position.y
 	if mode == "menu":
-		_center_text("AMOEBA ARENA", top + 69.0, 46, Color(0.39, 1.0, 0.79), viewport_size)
-		_center_text("EAT  •  ESCAPE  •  EVOLVE", top + 111.0, 18, Color(0.90, 0.98, 0.99), viewport_size)
-		_center_text("BIGGER CELLS CAN BITE SMALLER ONES", top + 157.0, 20, Color.WHITE, viewport_size)
-		_center_text("LOSING MASS MAKES YOU FASTER", top + 189.0, 20, Color(0.94, 0.76, 0.45), viewport_size)
-		_center_text("Collect glowing nutrients to grow again.", top + 226.0, 18, Color(0.73, 0.86, 0.89), viewport_size)
-		_center_text("TAP OR CLICK ANYWHERE TO PLAY", top + 303.0, 24, Color(0.38, 1.0, 0.76), viewport_size)
+		_center_text("AMOEBA ARENA", top + 70.0, 42, Color(0.39, 1.0, 0.79), viewport_size)
+		_center_text("EAT  •  ESCAPE  •  EVOLVE", top + 109.0, 18, Color(0.90, 0.98, 0.99), viewport_size)
+		_center_text("Bigger cells can bite smaller ones.", top + 161.0, 21, Color.WHITE, viewport_size)
+		_center_text("Lose mass, gain speed. Eat dots to recover.", top + 194.0, 18, Color(0.90, 0.78, 0.51), viewport_size)
+		_center_text("YOUR AMOEBA NAME", top + 244.0, 18, Color(0.73, 0.89, 0.90), viewport_size)
+		_center_text("Move by dragging anywhere on screen.", top + 430.0, 17, Color(0.67, 0.87, 0.87), viewport_size)
 	else:
-		_center_text("YOU WERE CONSUMED", top + 73.0, 39, Color(1.0, 0.51, 0.59), viewport_size)
-		_center_text("Survived  " + str(int(survival_time)) + "s", top + 132.0, 25, Color.WHITE, viewport_size)
-		_center_text("Largest mass  " + str(best_mass) + "     KOs  " + str(takedowns), top + 183.0, 22, Color(0.79, 0.94, 0.95), viewport_size)
-		_center_text("A cell is never out until its last bit is eaten.", top + 232.0, 18, Color(0.71, 0.85, 0.89), viewport_size)
-		_center_text("TAP OR CLICK TO TRY AGAIN", top + 309.0, 25, Color(0.38, 1.0, 0.76), viewport_size)
+		_center_text("YOU WERE CONSUMED", top + 82.0, 36, Color(1.0, 0.51, 0.59), viewport_size)
+		_center_text(username + " survived " + str(int(survival_time)) + " seconds", top + 148.0, 23, Color.WHITE, viewport_size)
+		_center_text("Best mass  " + str(best_mass) + "     KOs  " + str(takedowns), top + 198.0, 22, Color(0.79, 0.94, 0.95), viewport_size)
+		_center_text("Every bite matters. Every escape counts.", top + 273.0, 20, Color(0.71, 0.85, 0.89), viewport_size)
 
 
 func _center_text(text_value: String, y: float, size: int, tint: Color, viewport_size: Vector2) -> void:
@@ -536,3 +656,16 @@ func _save_record() -> void:
 	var file := FileAccess.open("user://amoeba_record.dat", FileAccess.WRITE)
 	if file != null:
 		file.store_32(best_mass)
+
+
+func _load_username() -> void:
+	if FileAccess.file_exists("user://amoeba_username.txt"):
+		var file := FileAccess.open("user://amoeba_username.txt", FileAccess.READ)
+		if file != null:
+			username = _sanitize_username(file.get_as_text())
+
+
+func _save_username() -> void:
+	var file := FileAccess.open("user://amoeba_username.txt", FileAccess.WRITE)
+	if file != null:
+		file.store_string(username)
