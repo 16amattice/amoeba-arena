@@ -484,7 +484,7 @@ func _draw_hud(viewport_size: Vector2) -> void:
 	for cell in cells:
 		if not cell["alive"]:
 			continue
-		var dot := map_rect.position + Vector2(8, 8) + (cell["pos"] / ARENA) * Vector2(144, 144)
+		var dot: Vector2 = map_rect.position + Vector2(8, 8) + (cell["pos"] / ARENA) * Vector2(144, 144)
 		draw_circle(dot, 4.5 if cell["human"] else 2.5, cell["color"])
 	if touch_index >= 0 and mode == "playing":
 		draw_circle(touch_origin, 68.0, Color(0.55, 0.92, 0.91, 0.09))
