@@ -61,6 +61,12 @@ jobs:
       - name: Check GDScript syntax
         run: timeout 30s godot --headless --path . --check-only --script res://scripts/game.gd
 
+      - name: Launch portrait menu
+        run: |
+          timeout 30s godot --headless --path . --quit-after 8 > startup.log 2>&1
+          cat startup.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' startup.log; then exit 1; fi
+
       - name: Smoke-test gameplay mechanics
         run: timeout 45s godot --headless --path . --script res://tests/arena_smoke.gd
 
