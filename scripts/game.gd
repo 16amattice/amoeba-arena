@@ -120,13 +120,16 @@ func _make_food() -> Dictionary:
 
 
 func _start_game() -> void:
-	username = _sanitize_username(name_entry.text)
+	if name_entry != null:
+		username = _sanitize_username(name_entry.text)
 	_save_username()
 	_reset_arena()
 	mode = "playing"
-	name_entry.visible = false
-	start_button.visible = false
-	name_entry.release_focus()
+	if name_entry != null:
+		name_entry.visible = false
+		name_entry.release_focus()
+	if start_button != null:
+		start_button.visible = false
 	DisplayServer.virtual_keyboard_hide()
 
 
