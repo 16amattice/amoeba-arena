@@ -22,13 +22,21 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+      - name: Locate preinstalled Android SDK
+        run: |
+          SDK="$ANDROID_HOME"
+          if [ -z "$SDK" ]; then SDK="/usr/local/lib/android/sdk"; fi
+          test -d "$SDK/cmdline-tools"
+          echo "ANDROID_HOME=$SDK" >> "$GITHUB_ENV"
+          echo "ANDROID_SDK_ROOT=$SDK" >> "$GITHUB_ENV"
+          SDKMANAGER="$(find "$SDK/cmdline-tools" -maxdepth 3 -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -x "$SDKMANAGER"
+          echo "$(dirname "$SDKMANAGER")" >> "$GITHUB_PATH"
 
       - name: Install Android export dependencies
         run: |
           yes | sdkmanager --licenses > /dev/null || true
-          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.1" "cmdline-tools;latest" "ndk;28.1.13356709" "cmake;3.10.2.4988404"
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.1"
 
       - name: Install Godot 4.7.2 and Android export templates
         uses: chickensoft-games/setup-godot@v2
