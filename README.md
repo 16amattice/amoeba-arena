@@ -76,4 +76,4 @@ This leaderboard is **local to your current offline arena**. It is not an online
 
 Profile stored in user://amoeba_progress.cfg. Current coins/XP don't purchase anything yet. Win condition is for the local AI arena, not multiplayer.
 
-**APK debug-signing caveat:** CI generates a temporary key each build. Upgrading from v0.2 requires uninstalling the old APK, which clears its saved local data. Later APKs will also need stable signing for reliable in-place upgrades.
+**APK debug signing:** The v0.3 workflow caches a debug signing key across CI builds to preserve app upgrade compatibility while GitHub retains that cache. The first v0.3 install may still require uninstalling v0.2 (which deletes old app data). Cached keys can expire or be evicted, and this is not production-grade key management. A durable private release signing key is still necessary for long-term installs.

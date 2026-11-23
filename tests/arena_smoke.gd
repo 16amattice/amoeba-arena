@@ -31,6 +31,15 @@ func _run_checks() -> void:
 
 	var wall = game._make_cell(Vector2(8, 8), 400.0, Color.BLUE, "CORNER", false)
 	var pieces = CellGeometry.world_shapes(wall, game.ARENA)
+	var touches_x := false
+	var touches_y := false
+	for polygon in pieces:
+		for vertex in polygon:
+			touches_x = touches_x or vertex.x < 0.01
+			touches_y = touches_y or vertex.y < 0.01
+	if not touches_x or not touches_y:
+		_fail("Corner body must actually touch both walls")
+		return
 	for polygon in pieces:
 		for vertex in polygon:
 			if vertex.x < 0.0 or vertex.y < 0.0 or vertex.x > game.ARENA.x or vertex.y > game.ARENA.y:
@@ -48,6 +57,12 @@ func _run_checks() -> void:
 	if CellGeometry.visible_area(victim, game.ARENA) >= original_area:
 		_fail("Physical remaining shape must lose actual visible area")
 		return
+	for remaining in CellGeometry.world_shapes(victim, game.ARENA):
+		for covered in CellGeometry.world_shapes(eater, game.ARENA):
+			for overlap in Geometry2D.intersect_polygons(remaining, covered):
+				if CellGeometry.polygon_area(overlap) > 1.0:
+					_fail("Already-eaten area must not still be part of the victim")
+					return
 	eater["pos"] = victim["pos"]
 	var finish: Dictionary = CellGeometry.consume(eater, victim, game.ARENA)
 	if not finish["dead"] or victim["alive"] or victim["mass"] > 0.0:
@@ -60,6 +75,18 @@ func _run_checks() -> void:
 		return
 	if game._sanitize_username("  Blob King  ") != "Blob King":
 		_fail("Usernames must be trimmed")
+		return
+	game._save_profile()
+	var saved := ConfigFile.new()
+	if saved.load("user://amoeba_progress.cfg") != OK or int(saved.get_value("progress", "coins", -1)) != game.coins:
+		_fail("Wallet must persist to device storage")
+		return
+	game._start_game()
+	game.cells = [game.player]
+	CellGeometry.grow(game.player, 300.0)
+	game._check_victory(game.CROWN_HOLD_SECONDS)
+	if game.mode != "won" or game.victories <= 0:
+		_fail("Hold-the-lead win condition must award a crown")
 		return
 	print("Amoeba Arena v0.3 tests passed")
 	quit(0)
