@@ -1,4 +1,5 @@
 extends Node2D
+const CellGeometry = preload("res://scripts/cell_geometry.gd")
 ## Amoeba Arena — a self-contained arcade prototype.
 ## No external services are required. Every amoeba is drawn procedurally.
 
@@ -8,7 +9,10 @@ const BOT_COUNT = 19
 const GRID_SPACING = 150
 const BITE_MARK_SECONDS = 2.5
 const CELL_VERTICES = 64
-const PICKUP_RADIUS = 18.0  # Small pellet collection bonus; future upgrade hook.
+const PICKUP_RADIUS = 14.0
+const CROWN_HOLD_SECONDS = 24.0
+const LEVEL_BASE_XP = 75
+const LEVEL_STEP_XP = 35
 const CELL_COLORS = [
 	Color(0.98, 0.43, 0.56), Color(0.65, 0.55, 1.0),
 	Color(0.36, 0.74, 1.0), Color(1.0, 0.70, 0.35),
@@ -43,6 +47,20 @@ var best_mass := 0
 var survival_time := 0.0
 var takedowns := 0
 var damage_flash := 0.0
+var cruise_direction := Vector2.ZERO
+var cruise_power := 0.0
+var coins := 0
+var level := 1
+var experience := 0
+var best_survival := 0
+var victories := 0
+var round_coins := 0
+var round_xp := 0
+var crown_time := 0.0
+var survival_tick := 0.0
+var pellet_tick := 0
+var bite_progress := 0.0
+var save_tick := 0.0
 var username := "YOU"
 var name_entry: LineEdit
 var start_button: Button
@@ -51,6 +69,7 @@ var start_button: Button
 func _ready() -> void:
 	randomize()
 	_load_record()
+	_load_profile()
 	_load_username()
 	_reset_arena()
 	_setup_menu_controls()
@@ -67,6 +86,14 @@ func _reset_arena() -> void:
 	damage_flash = 0.0
 	touch_index = -1
 	mouse_aim = false
+	cruise_direction = Vector2.ZERO
+	cruise_power = 0.0
+	crown_time = 0.0
+	survival_tick = 0.0
+	pellet_tick = 0
+	bite_progress = 0.0
+	round_coins = 0
+	round_xp = 0
 	player = _make_cell(ARENA * 0.5, 100.0, Color(0.26, 0.94, 0.78), username, true)
 	cells.append(player)
 	for n in range(BOT_COUNT):
@@ -78,24 +105,23 @@ func _reset_arena() -> void:
 
 
 func _make_cell(position: Vector2, mass: float, color: Color, label: String, human: bool) -> Dictionary:
+	var seed := randf_range(0.0, TAU)
 	return {
 		"pos": position,
 		"vel": Vector2.ZERO,
 		"mass": mass,
+		"shapes": CellGeometry.initial_shapes(mass, seed),
 		"color": color,
 		"label": label,
 		"human": human,
 		"alive": true,
-		"phase": randf_range(0.0, TAU),
+		"phase": seed,
 		"direction": randf_range(0.0, TAU),
 		"aim": position,
 		"think": randf_range(0.05, 0.55),
-		"marks": [],
 		"impact": 0.0,
-		"last_mark": -10.0,
 		"food_count": 0
 	}
-
 
 func _spawn_bot(number: int) -> void:
 	var placement := Vector2(randf_range(100.0, ARENA.x - 100.0), randf_range(100.0, ARENA.y - 100.0))
@@ -222,6 +248,7 @@ func _release_touch(index: int) -> void:
 		touch_index = -1
 		touch_origin = Vector2.ZERO
 		touch_position = Vector2.ZERO
+		# Keep the last steering direction and throttle after release.
 		mouse_aim = false
 
 
@@ -231,11 +258,14 @@ func _process(delta: float) -> void:
 	damage_flash = maxf(damage_flash - delta * 2.2, 0.0)
 	if mode == "playing":
 		survival_time += delta
+		_gain_survival_rewards(delta)
 		_think_for_bots(delta)
 		_move_cells(delta)
 		_consume_food()
 		_resolve_bites(delta)
 		_cleanup_dead()
+		if mode == "playing":
+			_check_victory(delta)
 		_update_particles(delta)
 		if player["alive"]:
 			camera_position = camera_position.lerp(player["pos"], minf(1.0, delta * 5.2))
@@ -252,6 +282,8 @@ func _process(delta: float) -> void:
 
 
 func _move_input() -> Vector2:
+	# A finger sets a cruise vector; releasing it keeps both direction AND
+	# throttle. Drag again to steer. No abrupt release-to-zero behavior.
 	var axis := Vector2.ZERO
 	if Input.is_key_pressed(KEY_A) or Input.is_key_pressed(KEY_LEFT):
 		axis.x -= 1.0
@@ -262,14 +294,19 @@ func _move_input() -> Vector2:
 	if Input.is_key_pressed(KEY_S) or Input.is_key_pressed(KEY_DOWN):
 		axis.y += 1.0
 	if axis.length_squared() > 0.0:
-		return axis.normalized()
+		cruise_direction = axis.normalized()
+		cruise_power = 1.0
 	if touch_index >= 0:
-		return ((touch_position - touch_origin) / 75.0).limit_length(1.0)
-	if mouse_aim:
+		var drag := touch_position - touch_origin
+		if drag.length() > 11.0:
+			cruise_direction = drag.normalized()
+			cruise_power = clampf(drag.length() / 80.0, 0.27, 1.0)
+	elif mouse_aim:
 		var offset := mouse_position - get_viewport_rect().size * 0.5
 		if offset.length() > 28.0:
-			return offset.normalized()
-	return Vector2.ZERO
+			cruise_direction = offset.normalized()
+			cruise_power = clampf(offset.length() / 120.0, 0.30, 1.0)
+	return cruise_direction * cruise_power
 
 
 func _cell_radius(cell: Dictionary) -> float:
@@ -336,23 +373,15 @@ func _move_cells(delta: float) -> void:
 			direction = to_aim.normalized() if to_aim.length() > 12.0 else Vector2.ZERO
 		var desired_velocity: Vector2 = direction * _cell_speed(cell)
 		var responsiveness := 9.0 if cell["human"] else 3.7
-		if cell["human"] and direction.length_squared() < 0.0001:
-			# No residual momentum after lifting a finger.
-			cell["vel"] = Vector2.ZERO
-		else:
-			cell["vel"] = cell["vel"].lerp(desired_velocity, minf(1.0, delta * responsiveness))
-		cell["pos"] += cell["vel"] * delta
-		var radius := _cell_radius(cell)
-		cell["pos"] = cell["pos"].clamp(Vector2.ONE * radius, ARENA - Vector2.ONE * radius)
+		cell["vel"] = cell["vel"].lerp(desired_velocity, minf(1.0, delta * responsiveness))
+		# Constrain the center only to the playable area. Shape vertices are
+		# conformed to the wall separately: a blob can flatten into a corner.
+		var next_pos: Vector2 = cell["pos"] + cell["vel"] * delta
+		cell["pos"] = next_pos.clamp(Vector2(8.0, 8.0), ARENA - Vector2(8.0, 8.0))
 		if cell["vel"].length() > 8.0:
 			cell["direction"] = lerp_angle(cell["direction"], cell["vel"].angle(), minf(1.0, delta * 4.0))
 		cell["phase"] += delta * (1.65 + cell["vel"].length() * 0.005)
 		cell["impact"] = maxf(0.0, cell["impact"] - delta * 4.0)
-		var marks: Array = cell["marks"]
-		for mark_index in range(marks.size() - 1, -1, -1):
-			marks[mark_index]["life"] -= delta / BITE_MARK_SECONDS
-			if marks[mark_index]["life"] <= 0.0:
-				marks.remove_at(mark_index)
 
 
 func _consume_food() -> void:
@@ -363,16 +392,23 @@ func _consume_food() -> void:
 				continue
 			var radius: float = _cell_radius(cell) * 0.83 + PICKUP_RADIUS + float(morsel["radius"])
 			if cell["pos"].distance_squared_to(morsel["pos"]) < radius * radius:
-				cell["mass"] += morsel["mass"]
+				CellGeometry.grow(cell, float(morsel["mass"]))
 				if cell["human"]:
 					cell["food_count"] += 1
+					pellet_tick += 1
+					_award(1, 0)
+					if pellet_tick >= 12:
+						pellet_tick = 0
+						_award(4, 2)
 				food.remove_at(food_index)
 				break
 	while food.size() < FOOD_COUNT:
 		food.append(_make_food())
 
 
-func _resolve_bites(delta: float) -> void:
+func _resolve_bites(_delta: float) -> void:
+	# Each overlap removes real polygon area from the smaller cell. There is
+	# no DPS or hitpoint interpolation: what is covered is what disappears.
 	for i in range(cells.size()):
 		var first := cells[i]
 		if not first["alive"]:
@@ -391,34 +427,31 @@ func _resolve_bites(delta: float) -> void:
 				victim = first
 			else:
 				continue
-			var reach := _cell_radius(eater) + _cell_radius(victim) * 0.70
-			var distance: float = eater["pos"].distance_to(victim["pos"])
-			if distance >= reach:
+			# Broad-phase culling keeps expensive polygon operations sparse.
+			var reach := _cell_radius(eater) + _cell_radius(victim) + 16.0
+			if eater["pos"].distance_squared_to(victim["pos"]) >= reach * reach:
 				continue
-			var penetration := clampf((reach - distance) / maxf(5.0, _cell_radius(victim)), 0.0, 1.0)
-			if penetration < 0.025:
+			var result: Dictionary = CellGeometry.consume(eater, victim, ARENA)
+			var taken: float = result["mass"]
+			if taken <= 0.0:
 				continue
-			var advantage := clampf(pow(eater["mass"] / maxf(1.0, victim["mass"]), 0.35), 1.0, 2.1)
-			var taken := minf(victim["mass"], delta * 48.0 * penetration * advantage)
-			victim["mass"] -= taken
-			eater["mass"] += taken * 0.83
+			CellGeometry.grow(eater, taken * 0.88)
+			victim["impact"] = 1.0
+			eater["impact"] = maxf(float(eater["impact"]), 0.45)
+			var position: Vector2 = result["position"]
+			_spawn_bite_droplets(position, victim["color"])
 			if victim["human"]:
-				damage_flash = minf(0.7, damage_flash + taken * 0.012)
-			if clock - victim["last_mark"] >= 0.22:
-				victim["last_mark"] = clock
-				victim["impact"] = 1.0
-				eater["impact"] = maxf(eater["impact"], 0.28)
-				var angle: float = (eater["pos"] - victim["pos"]).angle()
-				var marks: Array = victim["marks"]
-				marks.append({"angle": angle, "life": 1.0, "strength": 0.68, "width": 0.51})
-				if marks.size() > 4:
-					marks.pop_front()
-				_spawn_bite_droplets(victim["pos"] + Vector2.RIGHT.rotated(angle) * _cell_radius(victim) * 0.71, victim["color"])
-			if victim["mass"] <= 1.0:
-				victim["alive"] = false
+				damage_flash = minf(0.6, damage_flash + 0.18)
+			if eater["human"]:
+				bite_progress += taken
+				while bite_progress >= 5.0:
+					bite_progress -= 5.0
+					_award(3, 0)
+			if result["dead"]:
+				_burst_food(position, victim["color"])
 				if eater["human"]:
 					takedowns += 1
-				_burst_food(victim["pos"], victim["color"])
+					_award(32, 16)
 
 
 func _spawn_bite_droplets(position: Vector2, color: Color) -> void:
@@ -460,8 +493,7 @@ func _cleanup_dead() -> void:
 		if cells[index]["alive"]:
 			continue
 		if cells[index]["human"]:
-			mode = "dead"
-			_save_record()
+			_end_round(false)
 		else:
 			cells.remove_at(index)
 	if mode != "playing":
@@ -522,48 +554,60 @@ func _draw_arena() -> void:
 func _draw_cell(cell: Dictionary) -> void:
 	var center: Vector2 = cell["pos"]
 	var radius := _cell_radius(cell)
-	var color: Color = cell["color"]
-	var points := PackedVector2Array()
-	var shine_points := PackedVector2Array()
-	var velocity_amount := clampf(cell["vel"].length() / 350.0, 0.0, 1.0)
-	var impact: float = cell["impact"]
-	for i in range(CELL_VERTICES):
-		var angle := TAU * float(i) / float(CELL_VERTICES)
-		var wobble := 1.0 + 0.072 * sin(angle * 3.0 + cell["phase"]) + 0.047 * sin(angle * 5.0 - cell["phase"] * 1.2) + 0.028 * sin(angle * 8.0 + cell["phase"] * 1.8)
-		var stretch := 1.0 + 0.14 * velocity_amount * cos(angle - cell["direction"])
-		# Impact ripples make a bite look like a chomp rather than a health tick.
-		wobble += impact * 0.035 * sin(angle * 7.0 - clock * 25.0)
-		var dent := 1.0
-		for mark in cell["marks"]:
-			var diff := absf(wrapf(angle - mark["angle"], -PI, PI))
-			# A deep, rounded bite notch cut into the actual cell silhouette.
-			var width: float = mark["width"]
-			var ratio: float = clampf(diff / width, 0.0, 1.0)
-			var influence: float = pow(maxf(0.0, 1.0 - ratio * ratio), 2.0)
-			dent -= mark["strength"] * mark["life"] * influence
-		var displacement := Vector2(cos(angle), sin(angle)) * radius * wobble * stretch * maxf(0.30, dent)
-		points.append(center + displacement)
-		shine_points.append(center + displacement * 0.81)
-	var shadow := PackedVector2Array()
-	for p in points:
-		shadow.append(p + Vector2(3.0, 10.0))
-	draw_colored_polygon(shadow, Color(0.00, 0.02, 0.04, 0.32))
-	draw_colored_polygon(points, color.darkened(0.28))
-	draw_colored_polygon(shine_points, color)
-	var highlight := PackedVector2Array()
-	for p in points:
-		highlight.append(p)
-	highlight.append(points[0])
-	draw_polyline(highlight, color.lightened(0.32), 3.5, true)
-	# A translucent nucleus and two organelles emphasize the living-cell look.
-	draw_circle(center + Vector2(-radius * 0.11, radius * 0.02), radius * 0.30, Color(0.10, 0.31, 0.40, 0.20))
-	draw_circle(center + Vector2(-radius * 0.14, -radius * 0.02), radius * 0.19, Color(0.97, 1.0, 1.0, 0.18))
-	draw_circle(center + Vector2(radius * 0.38, radius * 0.19), maxf(2.0, radius * 0.075), Color(1, 1, 1, 0.32))
-	draw_circle(center + Vector2(-radius * 0.34, radius * 0.29), maxf(2.0, radius * 0.065), Color(1, 1, 1, 0.28))
+	var tint: Color = cell["color"]
+	var seed: float = cell["phase"]
+	var movement: float = clampf(cell["vel"].length() / 340.0, 0.0, 1.0)
+	var pieces: Array[PackedVector2Array] = CellGeometry.world_shapes(cell, ARENA)
+	for polygon in pieces:
+		var contour := PackedVector2Array()
+		var bounds_center := Vector2.ZERO
+		for point in polygon:
+			bounds_center += point
+		bounds_center /= float(polygon.size())
+		for point in polygon:
+			var from_center: Vector2 = point - bounds_center
+			var angle := from_center.angle()
+			var stretch := 1.0 + 0.018 * sin(angle * 5.0 + seed)
+			stretch += 0.022 * movement * cos(angle - float(cell["direction"]))
+			stretch += 0.011 * float(cell["impact"]) * sin(angle * 11.0 - clock * 27.0)
+			var soft: Vector2 = bounds_center + from_center * stretch
+			soft = soft.clamp(Vector2.ZERO, ARENA)
+			contour.append(soft)
+		if contour.size() < 3:
+			continue
+		var shadow := PackedVector2Array()
+		for point in contour:
+			shadow.append((point + Vector2(2.0, 6.0)).clamp(Vector2.ZERO, ARENA))
+		draw_colored_polygon(shadow, Color(0.0, 0.02, 0.04, 0.31))
+		draw_colored_polygon(contour, tint.darkened(0.22))
+		var inner := PackedVector2Array()
+		for point in contour:
+			inner.append(point.lerp(bounds_center, 0.09).clamp(Vector2.ZERO, ARENA))
+		draw_colored_polygon(inner, tint)
+		var closed := contour.duplicate()
+		closed.append(contour[0])
+		draw_polyline(closed, tint.lightened(0.32), 3.0, true)
+
+	# Each surviving fragment remains real tissue. Put a faint organelle on
+	# the biggest fragment without covering any chunks bitten away.
+	var main_area := 0.0
+	var nucleus := center
+	for polygon in pieces:
+		var area: float = CellGeometry.polygon_area(polygon)
+		if area > main_area:
+			main_area = area
+			var c := Vector2.ZERO
+			for point in polygon:
+				c += point
+			nucleus = c / float(polygon.size())
+	if main_area > 130.0:
+		draw_circle(nucleus, minf(radius * 0.18, sqrtf(main_area / PI) * 0.24), Color(0.05, 0.25, 0.31, 0.21))
+		draw_circle(nucleus + Vector2(-3, -3), minf(radius * 0.095, 13.0), Color(1, 1, 1, 0.17))
+	if radius < 12.0:
+		return
 	var font := ThemeDB.fallback_font
-	var label_text: String = cell["label"]
-	draw_string(font, center + Vector2(-radius, 4.0), label_text, HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, clampi(int(radius * 0.34), 10, 18), Color(0.03, 0.16, 0.20, 0.90))
-	draw_string(font, center + Vector2(-radius, 20.0), str(int(ceil(cell["mass"]))), HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 12, Color(0.03, 0.16, 0.20, 0.68))
+	draw_string(font, center + Vector2(-radius, 3.0), cell["label"], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, clampi(int(radius * 0.34), 10, 18), Color(0.015, 0.14, 0.16, 0.90))
+	draw_string(font, center + Vector2(-radius, 20.0), str(int(ceil(cell["mass"]))), HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 12, Color(0.02, 0.16, 0.20, 0.78))
 
 
 func _draw_hud(viewport_size: Vector2) -> void:
@@ -659,6 +703,85 @@ func _save_record() -> void:
 	var file := FileAccess.open("user://amoeba_record.dat", FileAccess.WRITE)
 	if file != null:
 		file.store_32(best_mass)
+
+
+func _experience_needed() -> int:
+	return LEVEL_BASE_XP + level * LEVEL_STEP_XP
+
+
+func _award(xp: int, gained_coins: int) -> void:
+	if xp > 0:
+		round_xp += xp
+		experience += xp
+	while experience >= _experience_needed():
+		experience -= _experience_needed()
+		level += 1
+		var level_bonus := 10 + level * 4
+		coins += level_bonus
+		round_coins += level_bonus
+	coins += gained_coins
+	round_coins += gained_coins
+
+
+func _gain_survival_rewards(delta: float) -> void:
+	survival_tick += delta
+	save_tick += delta
+	if survival_tick >= 1.0:
+		survival_tick -= 1.0
+		_award(1, 0)
+		if int(survival_time) % 12 == 0:
+			_award(2, 3)
+	if save_tick >= 12.0:
+		save_tick = 0.0
+		_save_profile()
+
+
+func _check_victory(delta: float) -> void:
+	if not player["alive"]:
+		return
+	var top := true
+	for cell in cells:
+		if cell != player and cell["alive"] and cell["mass"] >= player["mass"]:
+			top = false
+			break
+	if top and player["mass"] >= 220.0:
+		crown_time += delta
+		if crown_time >= CROWN_HOLD_SECONDS:
+			_award(150, 100)
+			victories += 1
+			_end_round(true)
+	else:
+		crown_time = 0.0
+
+
+func _end_round(was_victory: bool) -> void:
+	if mode != "playing":
+		return
+	mode = "won" if was_victory else "dead"
+	best_survival = maxi(best_survival, int(survival_time))
+	_save_record()
+	_save_profile()
+	_layout_menu_controls()
+
+
+func _load_profile() -> void:
+	var config := ConfigFile.new()
+	if config.load("user://amoeba_progress.cfg") == OK:
+		coins = int(config.get_value("progress", "coins", 0))
+		level = maxi(1, int(config.get_value("progress", "level", 1)))
+		experience = int(config.get_value("progress", "experience", 0))
+		best_survival = int(config.get_value("progress", "best_survival", 0))
+		victories = int(config.get_value("progress", "victories", 0))
+
+
+func _save_profile() -> void:
+	var config := ConfigFile.new()
+	config.set_value("progress", "coins", coins)
+	config.set_value("progress", "level", level)
+	config.set_value("progress", "experience", experience)
+	config.set_value("progress", "best_survival", best_survival)
+	config.set_value("progress", "victories", victories)
+	config.save("user://amoeba_progress.cfg")
 
 
 func _load_username() -> void:
