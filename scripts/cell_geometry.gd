@@ -146,8 +146,44 @@ static func world_shapes(cell: Dictionary, arena: Vector2) -> Array[PackedVector
 			transformed.y = clampf(transformed.y, -0.005, arena.y + 0.005)
 			final_points.append(transformed)
 		if polygon_area(final_points) >= MIN_FRAGMENT_AREA:
+			# A round silhouette can still leave a tiny diagonal notch at the
+			# precise corner, even though both wall edges are touched. When a
+			# fully recovered cell pushes into BOTH walls, extend its membrane
+			# to that corner. The convex hull is safe ONLY for a single round
+			# ring, never bitten fragments: we must not fill eaten holes.
+			if originals.size() == 1 and originals[0].size() == RING_POINTS \
+					and not bool(cell.get("needs_reform", false)):
+				final_points = _fill_corner(final_points, center, arena, radius)
 			world.append(final_points)
 	return world
+
+
+static func _fill_corner(points: PackedVector2Array, center: Vector2, arena: Vector2, radius: float) -> PackedVector2Array:
+	var near_left := center.x <= radius * 0.86
+	var near_right := arena.x - center.x <= radius * 0.86
+	var near_top := center.y <= radius * 0.86
+	var near_bottom := arena.y - center.y <= radius * 0.86
+	if not (near_left or near_right) or not (near_top or near_bottom):
+		return points
+	var corner := Vector2(arena.x if near_right else 0.0, arena.y if near_bottom else 0.0)
+	var dx := center.x if near_left else arena.x - center.x
+	var dy := center.y if near_top else arena.y - center.y
+	var alpha_x := clampf((radius * 0.86 - dx) / maxf(1.0, radius * 0.08), 0.0, 1.0)
+	var alpha_y := clampf((radius * 0.86 - dy) / maxf(1.0, radius * 0.08), 0.0, 1.0)
+	var alpha := minf(alpha_x, alpha_y)
+	if alpha <= 0.001:
+		return points
+	var closest := points[0]
+	var dist := INF
+	for point in points:
+		var candidate: float = point.distance_squared_to(corner)
+		if candidate < dist:
+			dist = candidate
+			closest = point
+	var output := points.duplicate()
+	output.append(closest.lerp(corner, alpha))
+	# This creates a solid, edible corner lobe with no separate layered tint.
+	return Geometry2D.convex_hull(output)
 
 
 static func world_poly(cell: Dictionary, _polygon: PackedVector2Array, arena: Vector2) -> PackedVector2Array:
