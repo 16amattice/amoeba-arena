@@ -89,6 +89,7 @@ func _run_checks() -> void:
 	if game.mode != "won" or game.victories <= 0:
 		_fail("Hold-the-lead win condition must award a crown")
 		return
+	game.free()
 	print("Amoeba Arena v0.3 tests passed")
 	quit(0)
 
