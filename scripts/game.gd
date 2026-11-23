@@ -785,7 +785,7 @@ func _visible(position: Vector2, padding: float) -> bool:
 
 func _draw() -> void:
 	var viewport_size := get_viewport_rect().size
-	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.034, 0.069, 0.091))
+	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.87, 0.94, 0.95) if light_mode else Color(0.034, 0.069, 0.091))
 	var camera_offset := viewport_size * 0.5 - camera_position * camera_zoom
 	draw_set_transform(camera_offset, 0.0, Vector2.ONE * camera_zoom)
 	_draw_arena()
@@ -798,11 +798,11 @@ func _draw() -> void:
 
 
 func _draw_arena() -> void:
-	draw_rect(Rect2(Vector2.ZERO, ARENA), Color(0.047, 0.105, 0.126))
+	draw_rect(Rect2(Vector2.ZERO, ARENA), Color(0.91, 0.97, 0.97) if light_mode else Color(0.047, 0.105, 0.126))
 	for x in range(0, int(ARENA.x) + 1, GRID_SPACING):
-		draw_line(Vector2(x, 0), Vector2(x, ARENA.y), Color(0.22, 0.40, 0.44, 0.13), 1.5)
+		draw_line(Vector2(x, 0), Vector2(x, ARENA.y), Color(0.26, 0.50, 0.53, 0.20) if light_mode else Color(0.22, 0.40, 0.44, 0.13), 1.5)
 	for y in range(0, int(ARENA.y) + 1, GRID_SPACING):
-		draw_line(Vector2(0, y), Vector2(ARENA.x, y), Color(0.22, 0.40, 0.44, 0.13), 1.5)
+		draw_line(Vector2(0, y), Vector2(ARENA.x, y), Color(0.26, 0.50, 0.53, 0.20) if light_mode else Color(0.22, 0.40, 0.44, 0.13), 1.5)
 	for morsel in food:
 		if not _visible(morsel["pos"], 10.0):
 			continue
@@ -829,10 +829,8 @@ func _draw_arena() -> void:
 func _draw_cell(cell: Dictionary) -> void:
 	var center: Vector2 = cell["pos"]
 	var radius := _cell_radius(cell)
-	var tint: Color = cell["color"]
-	# Exactly the SAME area-preserving wall geometry used by the eater.
-	# No second clamping pass, multiplied semi-transparent polygons, or
-	# collapsed vertices that could make the cell flicker/discolor at walls.
+	var skin := equipped_skin if cell["human"] else "mint"
+	var tint: Color = _skin_render_color(skin) if cell["human"] else cell["color"]
 	var pieces: Array[PackedVector2Array] = CellGeometry.world_shapes(cell, ARENA)
 	var largest_piece := PackedVector2Array()
 	var largest_area := 0.0
@@ -842,15 +840,18 @@ func _draw_cell(cell: Dictionary) -> void:
 		var area: float = CellGeometry.polygon_area(polygon)
 		if area <= 2.0:
 			continue
+		# One solid fill, two crisp contour lines: visible membrane rim without
+		# layered translucent polygons or color glitches at the arena wall.
 		draw_colored_polygon(polygon, tint)
+		if cell["human"] and not bool(cell.get("needs_reform", false)):
+			_draw_skin_pattern(polygon, center, radius, skin)
 		var closed := polygon.duplicate()
 		closed.append(polygon[0])
-		draw_polyline(closed, tint.lightened(0.23), 2.5, true)
+		draw_polyline(closed, Color(0.016, 0.20, 0.22, 0.92), 5.0, true)
+		draw_polyline(closed, tint.lightened(0.42), 2.4, true)
 		if area > largest_area:
 			largest_area = area
 			largest_piece = polygon
-	# Organelles are visible in rounded cells, but hidden while a fresh
-	# chunk is missing; otherwise a nucleus could float in an eaten hole.
 	if largest_area > 150.0 and not bool(cell.get("needs_reform", false)):
 		if Geometry2D.is_point_in_polygon(center, largest_piece):
 			draw_circle(center, minf(radius * 0.18, 19.0), Color(0.035, 0.29, 0.35, 0.20))
@@ -860,6 +861,34 @@ func _draw_cell(cell: Dictionary) -> void:
 	var font := ThemeDB.fallback_font
 	draw_string(font, center + Vector2(-radius, 3.0), cell["label"], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, clampi(int(radius * 0.34), 10, 18), Color(0.015, 0.14, 0.16, 0.93))
 	draw_string(font, center + Vector2(-radius, 20.0), str(int(ceil(cell["mass"]))), HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 12, Color(0.02, 0.16, 0.20, 0.78))
+
+
+func _draw_skin_pattern(polygon: PackedVector2Array, center: Vector2, radius: float, skin: String) -> void:
+	if skin == "mint":
+		return
+	# Stable organic pigments are clipped by the SAME physical polygon as
+	# collision. A player missing a bite cannot paint over the missing area.
+	for i in range(13):
+		var angle := float(i) * 2.39996 + 0.3
+		var orbit := radius * (0.20 + 0.045 * float(i % 8))
+		var point := center + Vector2.from_angle(angle + sin(clock * 1.2 + float(i)) * 0.06) * orbit
+		if not Geometry2D.is_point_in_polygon(point, polygon):
+			continue
+		match skin:
+			"bubblegum":
+				draw_circle(point, 2.8 + float(i % 3), Color(1.0, 0.87, 0.97, 0.82))
+			"arctic":
+				draw_arc(point, 3.8 + float(i % 3) * 1.3, 0.0, TAU, 12, Color(0.88, 1.0, 1.0, 0.64), 1.5, true)
+			"solar":
+				draw_circle(point, 2.0 + float(i % 3), Color(1.0, 0.97, 0.62, 0.81))
+			"rainbow":
+				draw_circle(point, 2.5 + float(i % 3), Color.from_hsv(fposmod(float(i) / 13.0 + clock * 0.25, 1.0), 0.83, 1.0))
+			"galaxy":
+				draw_circle(point, 1.7 + float(i % 3) * 0.65, Color(0.90, 0.96, 1.0, 0.70 + 0.30 * sin(clock * 2.4 + i)))
+			"gold":
+				draw_circle(point, 2.0 + float(i % 3), Color(1.0, 0.99, 0.81, 0.78))
+
+
 
 
 func _draw_hud(viewport_size: Vector2) -> void:
