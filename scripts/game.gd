@@ -349,17 +349,57 @@ func _setup_menu_controls() -> void:
 	name_entry.placeholder_text = "Your cell name"
 	name_entry.max_length = 14
 	name_entry.text = username
-	name_entry.add_theme_font_size_override("font_size", 30)
+	name_entry.add_theme_font_size_override("font_size", 29)
 	name_entry.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_entry.text_submitted.connect(_on_name_submitted)
 	add_child(name_entry)
 
 	start_button = Button.new()
-	start_button.name = "PlayButton"
 	start_button.text = "ENTER THE ARENA"
-	start_button.add_theme_font_size_override("font_size", 29)
+	start_button.add_theme_font_size_override("font_size", 28)
 	start_button.pressed.connect(_start_game)
 	add_child(start_button)
+
+	shop_button = Button.new()
+	shop_button.text = "SKINS"
+	shop_button.add_theme_font_size_override("font_size", 24)
+	shop_button.pressed.connect(_on_shop_button)
+	add_child(shop_button)
+
+	secondary_button = Button.new()
+	secondary_button.text = "SETTINGS"
+	secondary_button.add_theme_font_size_override("font_size", 24)
+	secondary_button.pressed.connect(_on_secondary_button)
+	add_child(secondary_button)
+
+	back_button = Button.new()
+	back_button.text = "BACK"
+	back_button.add_theme_font_size_override("font_size", 24)
+	back_button.pressed.connect(_return_from_overlay)
+	add_child(back_button)
+
+	settings_sound_button = Button.new()
+	settings_sound_button.pressed.connect(_toggle_sound)
+	settings_sound_button.add_theme_font_size_override("font_size", 23)
+	add_child(settings_sound_button)
+
+	settings_vibration_button = Button.new()
+	settings_vibration_button.pressed.connect(_toggle_vibration)
+	settings_vibration_button.add_theme_font_size_override("font_size", 23)
+	add_child(settings_vibration_button)
+
+	settings_theme_button = Button.new()
+	settings_theme_button.pressed.connect(_toggle_theme)
+	settings_theme_button.add_theme_font_size_override("font_size", 23)
+	add_child(settings_theme_button)
+
+	for i in range(SKINS.size()):
+		var option := Button.new()
+		option.name = "ShopSkin_" + str(i)
+		option.add_theme_font_size_override("font_size", 22)
+		option.pressed.connect(_on_skin_pressed.bind(i))
+		add_child(option)
+		shop_buttons.append(option)
 	_layout_menu_controls()
 
 
@@ -378,18 +418,67 @@ func _menu_geometry(screen: Vector2) -> Rect2:
 func _layout_menu_controls() -> void:
 	if name_entry == null or start_button == null:
 		return
-	var bounds := _menu_geometry(get_viewport_rect().size)
+	var screen := get_viewport_rect().size
+	var bounds := _menu_geometry(screen)
 	var margin := minf(48.0, bounds.size.x * 0.07)
+	var normal := mode == "menu" or mode == "dead" or mode == "won"
+	var is_shop := mode == "shop"
+	var is_settings := mode == "settings"
 	name_entry.position = bounds.position + Vector2(margin, 257.0)
-	name_entry.size = Vector2(bounds.size.x - margin * 2.0, 56.0)
-	start_button.position = bounds.position + Vector2(margin, 336.0)
-	start_button.size = Vector2(bounds.size.x - margin * 2.0, 64.0)
+	name_entry.size = Vector2(bounds.size.x - margin * 2.0, 58.0)
 	name_entry.visible = mode == "menu"
-	start_button.visible = mode != "playing"
-	if mode == "dead" or mode == "won":
-		start_button.text = "PLAY AGAIN"
-	elif mode == "menu":
-		start_button.text = "ENTER THE ARENA"
+
+	start_button.position = bounds.position + Vector2(margin, 338.0)
+	start_button.size = Vector2(bounds.size.x - margin * 2.0, 64.0)
+	start_button.visible = normal
+	start_button.text = "ENTER THE ARENA" if mode == "menu" else "PLAY AGAIN"
+
+	shop_button.position = bounds.position + Vector2(margin, 426.0)
+	shop_button.size = Vector2((bounds.size.x - margin * 2.0 - 16.0) * 0.5, 61.0)
+	shop_button.visible = normal
+	secondary_button.position = shop_button.position + Vector2(shop_button.size.x + 16.0, 0.0)
+	secondary_button.size = shop_button.size
+	secondary_button.text = "SETTINGS" if mode == "menu" else "HOME"
+	secondary_button.visible = normal
+
+	var panel := _options_geometry(screen)
+	back_button.position = panel.position + Vector2(24.0, panel.size.y - 86.0)
+	back_button.size = Vector2(panel.size.x - 48.0, 60.0)
+	back_button.visible = is_shop or is_settings
+
+	for i in range(shop_buttons.size()):
+		var option: Dictionary = SKINS[i]
+		var skin_control: Button = shop_buttons[i]
+		var id: String = option["id"]
+		if id == equipped_skin:
+			skin_control.text = "EQUIPPED"
+		elif owned_skins.has(id):
+			skin_control.text = "EQUIP"
+		else:
+			skin_control.text = str(option["cost"]) + " COINS"
+		skin_control.position = panel.position + Vector2(panel.size.x - 196.0, 155.0 + float(i) * 79.0)
+		skin_control.size = Vector2(166.0, 58.0)
+		skin_control.visible = is_shop
+		skin_control.disabled = id == equipped_skin
+
+	var setting_buttons := [settings_sound_button, settings_vibration_button, settings_theme_button]
+	var labels := [
+		"SOUND EFFECTS     " + ("ON" if sound_enabled else "OFF"),
+		"VIBRATION              " + ("ON" if vibration_enabled else "OFF"),
+		"APPEARANCE          " + ("LIGHT" if light_mode else "DARK")
+	]
+	for i in range(setting_buttons.size()):
+		var item: Button = setting_buttons[i]
+		item.text = labels[i]
+		item.position = panel.position + Vector2(43.0, 198.0 + float(i) * 106.0)
+		item.size = Vector2(panel.size.x - 86.0, 72.0)
+		item.visible = is_settings
+
+
+func _options_geometry(screen: Vector2) -> Rect2:
+	var width := minf(640.0, screen.x - 40.0)
+	var height := minf(885.0, screen.y - 64.0)
+	return Rect2((screen.x - width) * 0.5, (screen.y - height) * 0.5, width, height)
 
 
 func _input(event: InputEvent) -> void:
