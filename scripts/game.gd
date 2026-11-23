@@ -715,6 +715,15 @@ func _move_cells(delta: float) -> void:
 			cell["direction"] = lerp_angle(cell["direction"], cell["vel"].angle(), minf(1.0, delta * 4.0))
 		cell["phase"] += delta * (1.65 + cell["vel"].length() * 0.005)
 		cell["impact"] = maxf(0.0, cell["impact"] - delta * 4.0)
+		if cell["human"]:
+			var wake: Array = cell["trail"]
+			if cell["vel"].length() > 18.0:
+				if wake.is_empty() or (wake.back() as Vector2).distance_to(cell["pos"]) > 5.0:
+					wake.append(cell["pos"])
+					if wake.size() > 19:
+						wake.pop_front()
+			elif not wake.is_empty():
+				wake.remove_at(0)
 
 
 func _consume_food() -> void:
@@ -893,65 +902,46 @@ func _draw_cell(cell: Dictionary) -> void:
 	var center: Vector2 = cell["pos"]
 	var radius := _cell_radius(cell)
 	var skin := equipped_skin if cell["human"] else "mint"
-	var tint: Color = _skin_render_color(skin) if cell["human"] else cell["color"]
-	var pieces: Array[PackedVector2Array] = CellGeometry.world_shapes(cell, ARENA)
-	var largest_piece := PackedVector2Array()
-	var largest_area := 0.0
-	for polygon in pieces:
-		if polygon.size() < 3:
+	var tint: Color = SkinFX.phenotype_color(skin, clock) if cell["human"] else cell["color"]
+	var polygons: Array[PackedVector2Array] = CellGeometry.world_shapes(cell, ARENA)
+
+	if cell["human"]:
+		SkinFX.draw_wake(self,cell,skin,clock)
+
+	var main_polygon := PackedVector2Array()
+	var main_area := 0.0
+	for poly in polygons:
+		if poly.size() < 3:
 			continue
-		var area: float = CellGeometry.polygon_area(polygon)
-		if area <= 2.0:
+		var area: float = CellGeometry.polygon_area(poly)
+		if area < 3.0:
 			continue
-		# One solid fill, two crisp contour lines: visible membrane rim without
-		# layered translucent polygons or color glitches at the arena wall.
-		draw_colored_polygon(polygon, tint)
-		if cell["human"] and not bool(cell.get("needs_reform", false)):
-			_draw_skin_pattern(polygon, center, radius, skin)
-		var closed := polygon.duplicate()
-		closed.append(polygon[0])
-		draw_polyline(closed, Color(0.016, 0.20, 0.22, 0.92), 5.0, true)
-		draw_polyline(closed, tint.lightened(0.42), 2.4, true)
-		if area > largest_area:
-			largest_area = area
-			largest_piece = polygon
-	if largest_area > 150.0 and not bool(cell.get("needs_reform", false)):
-		if Geometry2D.is_point_in_polygon(center, largest_piece):
-			draw_circle(center, minf(radius * 0.18, 19.0), Color(0.035, 0.29, 0.35, 0.20))
-			draw_circle(center + Vector2(-2.5, -2.5), minf(radius * 0.09, 9.0), Color(1, 1, 1, 0.18))
+		if cell["human"] and not cell.get("needs_reform",false):
+			SkinFX.draw_tissue(self,poly,cell,skin,clock)
+		else:
+			draw_colored_polygon(poly,tint)
+		# A fine illuminated membrane rim makes the cells look like polished
+		# living organisms rather than flat geometric circles.
+		var closed := poly.duplicate()
+		closed.append(poly[0])
+		draw_polyline(closed,Color(0.025,0.14,0.18,0.78),4.1,true)
+		draw_polyline(closed,tint.lightened(0.31),1.8,true)
+		if area > main_area:
+			main_area = area
+			main_polygon = poly
+
+	if cell["human"] and not cell.get("needs_reform",false):
+		SkinFX.draw_aura(self,cell,skin,clock)
+
+	if main_area > 150.0 and not cell.get("needs_reform",false):
+		if Geometry2D.is_point_in_polygon(center,main_polygon):
+			draw_circle(center,minf(radius*0.16,18.0),Color(0.04,0.27,0.33,0.18))
+			draw_circle(center+Vector2(-3.0,-3.0),minf(radius*0.075,9.0),Color(1,1,1,0.15))
 	if radius < 12.0:
 		return
-	var font := ThemeDB.fallback_font
-	draw_string(font, center + Vector2(-radius, 3.0), cell["label"], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, clampi(int(radius * 0.34), 10, 18), Color(0.015, 0.14, 0.16, 0.93))
-	draw_string(font, center + Vector2(-radius, 20.0), str(int(ceil(cell["mass"]))), HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 12, Color(0.02, 0.16, 0.20, 0.78))
-
-
-func _draw_skin_pattern(polygon: PackedVector2Array, center: Vector2, radius: float, skin: String) -> void:
-	if skin == "mint":
-		return
-	# Stable organic pigments are clipped by the SAME physical polygon as
-	# collision. A player missing a bite cannot paint over the missing area.
-	for i in range(13):
-		var angle := float(i) * 2.39996 + 0.3
-		var orbit := radius * (0.20 + 0.045 * float(i % 8))
-		var point := center + Vector2.from_angle(angle + sin(clock * 1.2 + float(i)) * 0.06) * orbit
-		if not Geometry2D.is_point_in_polygon(point, polygon):
-			continue
-		match skin:
-			"bubblegum":
-				draw_circle(point, 2.8 + float(i % 3), Color(1.0, 0.87, 0.97, 0.82))
-			"arctic":
-				draw_arc(point, 3.8 + float(i % 3) * 1.3, 0.0, TAU, 12, Color(0.88, 1.0, 1.0, 0.64), 1.5, true)
-			"solar":
-				draw_circle(point, 2.0 + float(i % 3), Color(1.0, 0.97, 0.62, 0.81))
-			"rainbow":
-				draw_circle(point, 2.5 + float(i % 3), Color.from_hsv(fposmod(float(i) / 13.0 + clock * 0.25, 1.0), 0.83, 1.0))
-			"galaxy":
-				draw_circle(point, 1.7 + float(i % 3) * 0.65, Color(0.90, 0.96, 1.0, 0.70 + 0.30 * sin(clock * 2.4 + i)))
-			"gold":
-				draw_circle(point, 2.0 + float(i % 3), Color(1.0, 0.99, 0.81, 0.78))
-
-
+	var label_text: String = cell["label"]
+	draw_string(FONT_DISPLAY,center+Vector2(-radius,4.0),label_text,HORIZONTAL_ALIGNMENT_CENTER,radius*2.0,clampi(int(radius*0.33),12,19),Color(0.025,0.11,0.15,0.88))
+	draw_string(FONT_MONO,center+Vector2(-radius,23.0),str(int(ceil(cell["mass"]))),HORIZONTAL_ALIGNMENT_CENTER,radius*2.0,12,Color(0.02,0.15,0.18,0.73))
 
 
 func _load_record() -> void:
