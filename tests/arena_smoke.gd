@@ -110,7 +110,7 @@ func _run_checks() -> void:
 		return
 
 	# Progression perks help without making cosmetics pay-to-win.
-	var old_pickup := game._pickup_bonus()
+	var old_pickup: float = game._pickup_bonus()
 	game.level = 9
 	if game._pickup_bonus() <= old_pickup or game._food_bonus() <= 0.0 or game._starting_mass_bonus() <= 0.0:
 		_fail("Level progression should unlock tangible passive advantages")
