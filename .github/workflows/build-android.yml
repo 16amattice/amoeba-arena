@@ -80,7 +80,10 @@ jobs:
           if grep -E 'SCRIPT ERROR:|ERROR:' startup.log; then exit 1; fi
 
       - name: Smoke-test gameplay mechanics
-        run: timeout 45s godot --headless --path . --script res://tests/arena_smoke.gd
+        run: |
+          timeout 45s godot --headless --path . --script res://tests/arena_smoke.gd > smoke.log 2>&1
+          cat smoke.log
+          if grep -E 'SCRIPT ERROR:|ERROR:' smoke.log; then exit 1; fi
 
       - name: Export debug APK
         run: |

@@ -82,7 +82,8 @@ func _run_checks() -> void:
 		_fail("Wallet must persist to device storage")
 		return
 	game._start_game()
-	game.cells = [game.player]
+	game.cells.clear()
+	game.cells.append(game.player)
 	CellGeometry.grow(game.player, 300.0)
 	game._check_victory(game.CROWN_HOLD_SECONDS)
 	if game.mode != "won" or game.victories <= 0:
