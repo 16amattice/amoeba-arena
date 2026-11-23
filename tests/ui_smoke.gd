@@ -40,8 +40,9 @@ func _run() -> void:
 	if game.mode != "settings" or not game.settings_theme_button.visible:
 		_fail("Settings must be visible from home")
 		return
+	var previous_theme: bool = game.light_mode
 	game._toggle_theme()
-	if not game.light_mode:
+	if game.light_mode == previous_theme:
 		_fail("Theme preference must switch")
 		return
 	game._return_from_overlay()
