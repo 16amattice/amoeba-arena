@@ -961,7 +961,13 @@ func _draw_leaderboard(viewport_size: Vector2) -> void:
 
 
 func _draw_overlay(viewport_size: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.01, 0.035, 0.052, 0.79))
+	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.01, 0.035, 0.052, 0.80))
+	if mode == "shop":
+		_draw_shop_overlay(viewport_size)
+		return
+	if mode == "settings":
+		_draw_settings_overlay(viewport_size)
+		return
 	var bounds := _menu_geometry(viewport_size)
 	draw_rect(bounds, Color(0.045, 0.13, 0.16, 0.97))
 	draw_rect(bounds, Color(0.36, 0.95, 0.78, 0.58), false, 2.0)
@@ -969,23 +975,69 @@ func _draw_overlay(viewport_size: Vector2) -> void:
 	if mode == "menu":
 		_center_text("AMOEBA ARENA", top + 57.0, 42, Color(0.39, 1.0, 0.79), viewport_size)
 		_center_text("CELL CROWN", top + 95.0, 19, Color(1.0, 0.83, 0.43), viewport_size)
-		_center_text("Engulf smaller cells. Keep the tissue you save.", top + 145.0, 20, Color.WHITE, viewport_size)
-		_center_text("Reach #1 and hold it for 24s to win.", top + 179.0, 20, Color(0.90, 0.78, 0.51), viewport_size)
-		_center_text("LVL " + str(level) + "    COINS " + str(coins) + "    WINS " + str(victories), top + 214.0, 18, Color(0.71, 0.89, 0.98), viewport_size)
-		_center_text("YOUR AMOEBA NAME", top + 245.0, 18, Color(0.73, 0.89, 0.90), viewport_size)
-		_center_text("Drag to steer. Let go to keep cruising.", top + 431.0, 17, Color(0.67, 0.87, 0.87), viewport_size)
-	elif mode == "won":
-		_center_text("CELL CROWN CLAIMED!", top + 68.0, 37, Color(1.0, 0.85, 0.40), viewport_size)
-		_center_text(username + " ruled the arena", top + 119.0, 25, Color.WHITE, viewport_size)
-		_center_text("WIN BONUS  +150 XP   +100 COINS", top + 174.0, 21, Color(1.0, 0.91, 0.54), viewport_size)
-		_center_text("ROUND TOTAL  +" + str(round_xp) + " XP   +" + str(round_coins) + " COINS", top + 213.0, 19, Color(0.73, 0.92, 1.0), viewport_size)
-		_center_text("LVL " + str(level) + "    COINS " + str(coins) + "    TIME " + str(int(survival_time)) + "s", top + 280.0, 20, Color.WHITE, viewport_size)
+		_center_text("Engulf smaller cells. Survive. Evolve.", top + 145.0, 20, Color.WHITE, viewport_size)
+		_center_text("Hold first place for 24s to win!", top + 179.0, 20, Color(0.90, 0.78, 0.51), viewport_size)
+		_center_text("LVL " + str(level) + "    COINS " + str(coins) + "    WINS " + str(victories), top + 215.0, 18, Color(0.71, 0.89, 0.98), viewport_size)
+		_center_text("YOUR AMOEBA NAME", top + 246.0, 18, Color(0.73, 0.89, 0.90), viewport_size)
 	else:
-		_center_text("YOU WERE CONSUMED", top + 75.0, 37, Color(1.0, 0.51, 0.59), viewport_size)
-		_center_text(username + " survived " + str(int(survival_time)) + " seconds", top + 133.0, 23, Color.WHITE, viewport_size)
-		_center_text("ROUND TOTAL  +" + str(round_xp) + " XP   +" + str(round_coins) + " COINS", top + 191.0, 20, Color(1.0, 0.87, 0.56), viewport_size)
-		_center_text("LEVEL " + str(level) + "    COINS " + str(coins), top + 238.0, 22, Color(0.77, 0.94, 0.99), viewport_size)
-		_center_text("BEST TIME " + str(best_survival) + "s     KOs " + str(takedowns), top + 285.0, 19, Color(0.77, 0.90, 0.90), viewport_size)
+		if mode == "won":
+			_center_text("CELL CROWN CLAIMED!", top + 68.0, 36, Color(1.0, 0.85, 0.40), viewport_size)
+			_center_text(username + " ruled the arena", top + 128.0, 24, Color.WHITE, viewport_size)
+			_center_text("WIN BONUS  +150 XP   +100 COINS", top + 177.0, 21, Color(1.0, 0.91, 0.54), viewport_size)
+		else:
+			_center_text("YOU WERE CONSUMED", top + 75.0, 36, Color(1.0, 0.51, 0.59), viewport_size)
+			_center_text(username + " survived " + str(int(survival_time)) + " seconds", top + 132.0, 23, Color.WHITE, viewport_size)
+		_center_text("ROUND TOTAL  +" + str(round_xp) + " XP   +" + str(round_coins) + " COINS", top + 221.0, 20, Color(1.0, 0.87, 0.56), viewport_size)
+		_center_text("LEVEL " + str(level) + "    COINS " + str(coins), top + 265.0, 21, Color(0.77, 0.94, 0.99), viewport_size)
+	_center_text("LEVEL PERKS  •  ALWAYS ACTIVE", top + 512.0, 17, Color(0.40, 1.0, 0.83), viewport_size)
+	var bonus_line := "Magnet +" + str(int(_pickup_bonus())) + "   Food +" + str(int(_food_bonus() * 100.0)) + "%   Start +" + str(int(_starting_mass_bonus()))
+	_center_text(bonus_line, top + 540.0, 17, Color(0.81, 0.95, 0.94), viewport_size)
+
+
+func _draw_shop_overlay(screen: Vector2) -> void:
+	var panel := _options_geometry(screen)
+	draw_rect(panel, Color(0.042, 0.11, 0.15, 0.98))
+	draw_rect(panel, Color(0.36, 0.93, 0.78, 0.55), false, 2.0)
+	var left := panel.position.x
+	var top := panel.position.y
+	var font := ThemeDB.fallback_font
+	draw_string(font, Vector2(left + 28.0, top + 54.0), "CELL SKIN LAB", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 56.0, 39, Color(0.44, 1.0, 0.81))
+	draw_string(font, Vector2(left + 29.0, top + 94.0), "WALLET  " + str(coins) + " COINS", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 58.0, 24, Color(1.0, 0.84, 0.49))
+	draw_string(font, Vector2(left + 29.0, top + 124.0), "Cosmetics only — all skins have equal power.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 58.0, 17, Color(0.77, 0.91, 0.94))
+	for index in range(SKINS.size()):
+		var skin: Dictionary = SKINS[index]
+		var y := top + 151.0 + float(index) * 79.0
+		draw_rect(Rect2(left + 20.0, y, panel.size.x - 40.0, 68.0), Color(0.10, 0.23, 0.28, 0.83))
+		var color: Color = _skin_render_color(str(skin["id"]))
+		var center := Vector2(left + 55.0, y + 33.0)
+		draw_circle(center, 24.0, color)
+		draw_arc(center, 24.0, 0.0, TAU, 32, color.lightened(0.38), 3.4, true)
+		if skin["id"] == "rainbow":
+			for dot in range(6):
+				var angle := float(dot) * TAU / 6.0
+				draw_circle(center + Vector2.from_angle(angle) * 13.0, 3.4, Color.from_hsv(float(dot) / 6.0 + fposmod(clock * 0.07, 1.0), 0.88, 1.0))
+		elif skin["id"] == "galaxy":
+			for dot in range(5):
+				draw_circle(center + Vector2.from_angle(float(dot) * 2.399) * 11.0, 1.9, Color(1, 1, 1, 0.9))
+		elif skin["id"] == "gold":
+			draw_circle(center, 7.0, Color(1, 1, 0.74, 0.80))
+		draw_string(font, Vector2(left + 96.0, y + 28.0), str(skin["name"]), HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 306.0, 21, Color.WHITE)
+		draw_string(font, Vector2(left + 96.0, y + 53.0), str(skin["detail"]), HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 306.0, 15, Color(0.73, 0.87, 0.90))
+	draw_string(font, Vector2(left + 26.0, top + 746.0), shop_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x - 52.0, 18, Color(1.0, 0.86, 0.51))
+
+
+func _draw_settings_overlay(screen: Vector2) -> void:
+	var panel := _options_geometry(screen)
+	draw_rect(panel, Color(0.042, 0.11, 0.15, 0.98))
+	draw_rect(panel, Color(0.36, 0.93, 0.78, 0.55), false, 2.0)
+	var x := panel.position.x
+	var top := panel.position.y
+	var font := ThemeDB.fallback_font
+	draw_string(font, Vector2(x + 31.0, top + 65.0), "SETTINGS", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 62.0, 44, Color(0.44, 1.0, 0.81))
+	draw_string(font, Vector2(x + 31.0, top + 119.0), "Your preferences save automatically.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 62.0, 21, Color(0.80, 0.92, 0.94))
+	draw_string(font, Vector2(x + 35.0, top + 575.0), "Audio is generated locally — no files or downloads.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 70.0, 17, Color(0.79, 0.89, 0.91))
+	draw_string(font, Vector2(x + 35.0, top + 611.0), "Light mode changes the arena background.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 70.0, 17, Color(0.79, 0.89, 0.91))
+	draw_string(font, Vector2(x + 35.0, top + 647.0), "Vibration works on supported Android devices.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 70.0, 17, Color(0.79, 0.89, 0.91))
 
 
 func _center_text(text_value: String, y: float, size: int, tint: Color, viewport_size: Vector2) -> void:
