@@ -102,3 +102,29 @@ Profile stored in user://amoeba_progress.cfg. Current coins/XP don't purchase an
 ### Build and installation
 
 Download the APK from the latest successful GitHub Actions build. The Android export enables the VIBRATE permission to support optional haptics. The cached debug signing key is not a durable production release key; if Android rejects an update due to a signature mismatch, reinstalling will erase locally saved progression.
+
+
+## Prototype 0.6 — Field Notes design update
+
+A laboratory-instrument visual system replaces the previous scattered cards and default fonts.
+
+- Full-bleed **frosted-glass screens** on home, game-over, shop, settings, using real screen texture mipmapped blur in shaders/frosted_glass.gdshader.
+- Gameplay HUD: translucent full-width header and footer, floating frosted minimap and mass-ranked list. The central playfield stays clear.
+- Typography: Chakra Petch Bold/Medium display and actions, DM Mono for numerical metrics and technical labels. All fonts are OFL 1.1; license copies live under assets/fonts/.
+- Existing skin purchases, progression and local account settings remain supported.
+
+### Reimagined cell phenotypes
+
+Existing skin IDs and prices are retained. These enhancements are **visual only**, not pay-to-win.
+
+| ID | Display name | Living visual effects | Coins |
+| --- | --- | --- | ---: |
+| mint | Tidepool | Aqua ripples, luminous microbubbles | Free |
+| bubblegum | Coral Bloom | Animated petals and coral wake | 75 |
+| arctic | Cryoglass | Frost facets, icy mist trail | 140 |
+| solar | Starfall | Corona arcs, sparks, ember tail | 215 |
+| rainbow | Prismatic | Color-graded membrane, spectrum orbit sparks and twin ribbons | 365 |
+| galaxy | Dark Matter | Midnight starfield, orbiting lights and violet wake | 490 |
+| gold | Sunforged | Metallic shimmer, amber dust and crown halo | 650 |
+
+The skin_fx.gd module contains the visual rendering; cell_geometry.gd remains the collision and tissue source of truth. The screen blur uses Godot 4's screen texture and mipmap sampling under the GL Compatibility renderer. CI verifies script syntax, module loading, and gameplay; the full visual result still benefits from a physical-phone test.
