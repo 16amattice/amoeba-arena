@@ -1041,12 +1041,26 @@ func _end_round(was_victory: bool) -> void:
 
 func _load_profile() -> void:
 	var config := ConfigFile.new()
-	if config.load("user://amoeba_progress.cfg") == OK:
-		coins = int(config.get_value("progress", "coins", 0))
-		level = maxi(1, int(config.get_value("progress", "level", 1)))
-		experience = int(config.get_value("progress", "experience", 0))
-		best_survival = int(config.get_value("progress", "best_survival", 0))
-		victories = int(config.get_value("progress", "victories", 0))
+	if config.load("user://amoeba_progress.cfg") != OK:
+		return
+	coins = maxi(0, int(config.get_value("progress", "coins", 0)))
+	level = maxi(1, int(config.get_value("progress", "level", 1)))
+	experience = maxi(0, int(config.get_value("progress", "experience", 0)))
+	best_survival = int(config.get_value("progress", "best_survival", 0))
+	victories = int(config.get_value("progress", "victories", 0))
+	owned_skins.clear()
+	for value in config.get_value("cosmetics", "owned", ["mint"]):
+		var id := str(value)
+		if not owned_skins.has(id) and _skin_definition(id)["id"] == id:
+			owned_skins.append(id)
+	if not owned_skins.has("mint"):
+		owned_skins.append("mint")
+	equipped_skin = str(config.get_value("cosmetics", "equipped", "mint"))
+	if not owned_skins.has(equipped_skin):
+		equipped_skin = "mint"
+	sound_enabled = bool(config.get_value("settings", "sound", true))
+	vibration_enabled = bool(config.get_value("settings", "vibration", true))
+	light_mode = bool(config.get_value("settings", "light_mode", false))
 
 
 func _save_profile() -> void:
@@ -1056,6 +1070,11 @@ func _save_profile() -> void:
 	config.set_value("progress", "experience", experience)
 	config.set_value("progress", "best_survival", best_survival)
 	config.set_value("progress", "victories", victories)
+	config.set_value("cosmetics", "owned", owned_skins)
+	config.set_value("cosmetics", "equipped", equipped_skin)
+	config.set_value("settings", "sound", sound_enabled)
+	config.set_value("settings", "vibration", vibration_enabled)
+	config.set_value("settings", "light_mode", light_mode)
 	config.save("user://amoeba_progress.cfg")
 
 
