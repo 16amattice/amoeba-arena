@@ -1,5 +1,10 @@
 extends Node2D
 const CellGeometry = preload("res://scripts/cell_geometry.gd")
+const ArenaUI = preload("res://scripts/arena_ui.gd")
+const SkinFX = preload("res://scripts/skin_fx.gd")
+const FONT_DISPLAY = preload("res://assets/fonts/ChakraPetch-Bold.ttf")
+const FONT_BODY = preload("res://assets/fonts/ChakraPetch-Medium.ttf")
+const FONT_MONO = preload("res://assets/fonts/DMMono-Regular.ttf")
 ## Amoeba Arena — a self-contained arcade prototype.
 ## No external services are required. Every amoeba is drawn procedurally.
 
@@ -14,13 +19,13 @@ const CROWN_HOLD_SECONDS = 24.0
 const LEVEL_BASE_XP = 75
 const LEVEL_STEP_XP = 35
 const SKINS = [
-	{"id":"mint","name":"Mint Jelly","cost":0,"color":Color(0.26,0.94,0.78),"detail":"Classic living cell"},
-	{"id":"bubblegum","name":"Bubblegum","cost":75,"color":Color(1.0,0.46,0.71),"detail":"Candy freckles"},
-	{"id":"arctic","name":"Arctic Glow","cost":140,"color":Color(0.30,0.77,1.0),"detail":"Icy microbubbles"},
-	{"id":"solar","name":"Solar Flare","cost":215,"color":Color(1.0,0.60,0.24),"detail":"Golden sparks"},
-	{"id":"rainbow","name":"Rainbow Flux","cost":365,"color":Color(1.0,0.35,0.65),"detail":"Shifting colors"},
-	{"id":"galaxy","name":"Galactic","cost":490,"color":Color(0.47,0.30,0.80),"detail":"Starlight speckles"},
-	{"id":"gold","name":"Golden Crown","cost":650,"color":Color(0.96,0.78,0.28),"detail":"Royal shimmer"}
+	{"id":"mint","name":"Tidepool","cost":0,"color":Color(0.26,0.94,0.78),"detail":"Bioluminescent ripples"},
+	{"id":"bubblegum","name":"Coral Bloom","cost":75,"color":Color(1.0,0.46,0.71),"detail":"Living petals + coral wake"},
+	{"id":"arctic","name":"Cryoglass","cost":140,"color":Color(0.30,0.77,1.0),"detail":"Ice facets + frozen mist"},
+	{"id":"solar","name":"Starfall","cost":215,"color":Color(1.0,0.60,0.24),"detail":"Solar corona + ember tail"},
+	{"id":"rainbow","name":"Prismatic","cost":365,"color":Color(1.0,0.35,0.65),"detail":"Spectrum body + twin trails"},
+	{"id":"galaxy","name":"Dark Matter","cost":490,"color":Color(0.47,0.30,0.80),"detail":"Orbiting stars + void wake"},
+	{"id":"gold","name":"Sunforged","cost":650,"color":Color(0.96,0.78,0.28),"detail":"Royal flare + golden dust"}
 ]
 const CELL_COLORS = [
 	Color(0.98, 0.43, 0.56), Color(0.65, 0.55, 1.0),
@@ -80,6 +85,7 @@ var shop_return_mode := "menu"
 var shop_message := ""
 var sound_player: AudioStreamPlayer
 var last_sound_time := -10.0
+var ui
 var name_entry: LineEdit
 var start_button: Button
 var shop_button: Button
@@ -97,6 +103,9 @@ func _ready() -> void:
 	_load_profile()
 	_load_username()
 	_reset_arena()
+	ui = ArenaUI.new()
+	add_child(ui)
+	ui.attach(self)
 	_setup_menu_controls()
 	sound_player = AudioStreamPlayer.new()
 	sound_player.name = "ProceduralSFX"
@@ -139,6 +148,7 @@ func _make_cell(position: Vector2, mass: float, color: Color, label: String, hum
 		"vel": Vector2.ZERO,
 		"mass": mass,
 		"shapes": CellGeometry.initial_shapes(mass, seed),
+		"trail": [],
 		"needs_reform": false,
 		"reform_delay": 0.0,
 		"color": color,
@@ -353,55 +363,111 @@ func _setup_menu_controls() -> void:
 	name_entry.add_theme_font_size_override("font_size", 29)
 	name_entry.alignment = HORIZONTAL_ALIGNMENT_CENTER
 	name_entry.text_submitted.connect(_on_name_submitted)
-	add_child(name_entry)
+	ui.root.add_child(name_entry)
 
 	start_button = Button.new()
 	start_button.text = "ENTER THE ARENA"
 	start_button.add_theme_font_size_override("font_size", 28)
 	start_button.pressed.connect(_start_game)
-	add_child(start_button)
+	ui.root.add_child(start_button)
 
 	shop_button = Button.new()
 	shop_button.text = "SKINS"
 	shop_button.add_theme_font_size_override("font_size", 24)
 	shop_button.pressed.connect(_on_shop_button)
-	add_child(shop_button)
+	ui.root.add_child(shop_button)
 
 	secondary_button = Button.new()
 	secondary_button.text = "SETTINGS"
 	secondary_button.add_theme_font_size_override("font_size", 24)
 	secondary_button.pressed.connect(_on_secondary_button)
-	add_child(secondary_button)
+	ui.root.add_child(secondary_button)
 
 	back_button = Button.new()
 	back_button.text = "BACK"
 	back_button.add_theme_font_size_override("font_size", 24)
 	back_button.pressed.connect(_return_from_overlay)
-	add_child(back_button)
+	ui.root.add_child(back_button)
 
 	settings_sound_button = Button.new()
 	settings_sound_button.pressed.connect(_toggle_sound)
 	settings_sound_button.add_theme_font_size_override("font_size", 23)
-	add_child(settings_sound_button)
+	ui.root.add_child(settings_sound_button)
 
 	settings_vibration_button = Button.new()
 	settings_vibration_button.pressed.connect(_toggle_vibration)
 	settings_vibration_button.add_theme_font_size_override("font_size", 23)
-	add_child(settings_vibration_button)
+	ui.root.add_child(settings_vibration_button)
 
 	settings_theme_button = Button.new()
 	settings_theme_button.pressed.connect(_toggle_theme)
 	settings_theme_button.add_theme_font_size_override("font_size", 23)
-	add_child(settings_theme_button)
+	ui.root.add_child(settings_theme_button)
 
 	for i in range(SKINS.size()):
 		var option := Button.new()
 		option.name = "ShopSkin_" + str(i)
 		option.add_theme_font_size_override("font_size", 22)
 		option.pressed.connect(_on_skin_pressed.bind(i))
-		add_child(option)
+		ui.root.add_child(option)
 		shop_buttons.append(option)
+	_style_controls()
 	_layout_menu_controls()
+
+
+func _style_controls() -> void:
+	var plain := [shop_button, secondary_button, back_button,
+		settings_sound_button, settings_vibration_button, settings_theme_button]
+	for item in shop_buttons:
+		plain.append(item)
+	for item in plain:
+		_style_button(item, false)
+	_style_button(start_button, true)
+
+	var field := StyleBoxFlat.new()
+	field.bg_color = Color(0.06,0.16,0.19,0.93)
+	field.border_color = Color(0.40,0.96,0.81,0.55)
+	field.border_width_bottom = 2
+	field.content_margin_left = 18
+	field.content_margin_right = 18
+	field.corner_radius_top_left = 5
+	field.corner_radius_bottom_left = 5
+	field.corner_radius_top_right = 5
+	field.corner_radius_bottom_right = 5
+	name_entry.add_theme_stylebox_override("normal",field)
+	name_entry.add_theme_stylebox_override("focus",field)
+	name_entry.add_theme_font_override("font", FONT_MONO)
+	name_entry.add_theme_color_override("font_color",Color(0.94,0.99,0.99))
+	name_entry.add_theme_color_override("font_placeholder_color",Color(0.52,0.77,0.79))
+	name_entry.add_theme_font_size_override("font_size",25)
+
+
+func _style_button(button: Button, primary: bool) -> void:
+	button.add_theme_font_override("font",FONT_DISPLAY if primary else FONT_BODY)
+	button.add_theme_font_size_override("font_size",27 if primary else 23)
+	button.add_theme_color_override("font_color",Color(0.03,0.12,0.14) if primary else Color(0.89,0.99,0.98))
+	button.add_theme_color_override("font_hover_color",Color(0.04,0.13,0.14) if primary else Color.WHITE)
+	button.add_theme_color_override("font_pressed_color",Color(0.04,0.13,0.14) if primary else Color.WHITE)
+	button.add_theme_color_override("font_disabled_color",Color(0.45,0.75,0.74))
+	var normal := StyleBoxFlat.new()
+	normal.bg_color = Color(0.43,0.96,0.81,0.95) if primary else Color(0.09,0.22,0.26,0.85)
+	normal.border_color = Color(0.74,1.0,0.90,0.67) if primary else Color(0.43,0.90,0.84,0.43)
+	normal.border_width_left = 1
+	normal.border_width_right = 1
+	normal.border_width_top = 1
+	normal.border_width_bottom = 2
+	normal.corner_radius_top_left = 5
+	normal.corner_radius_top_right = 5
+	normal.corner_radius_bottom_left = 5
+	normal.corner_radius_bottom_right = 5
+	button.add_theme_stylebox_override("normal",normal)
+	var hover := normal.duplicate() as StyleBoxFlat
+	hover.bg_color = Color(0.73,1.0,0.86) if primary else Color(0.14,0.33,0.38,0.94)
+	button.add_theme_stylebox_override("hover",hover)
+	button.add_theme_stylebox_override("pressed",hover)
+	var disabled := normal.duplicate() as StyleBoxFlat
+	disabled.bg_color = Color(0.06,0.18,0.19,0.85)
+	button.add_theme_stylebox_override("disabled",disabled)
 
 
 func _on_name_submitted(_submitted: String) -> void:
@@ -419,67 +485,67 @@ func _menu_geometry(screen: Vector2) -> Rect2:
 func _layout_menu_controls() -> void:
 	if name_entry == null or start_button == null:
 		return
-	var screen := get_viewport_rect().size
-	var bounds := _menu_geometry(screen)
-	var margin := minf(48.0, bounds.size.x * 0.07)
-	var normal := mode == "menu" or mode == "dead" or mode == "won"
+	var screen: Vector2 = get_viewport_rect().size
+	var w := screen.x
+	var h := screen.y
+	var pad := 40.0
+	var usable := w - pad * 2.0
+	var is_home := mode == "menu"
+	var is_result := mode == "dead" or mode == "won"
+	var is_normal := is_home or is_result
 	var is_shop := mode == "shop"
 	var is_settings := mode == "settings"
-	name_entry.position = bounds.position + Vector2(margin, 257.0)
-	name_entry.size = Vector2(bounds.size.x - margin * 2.0, 58.0)
-	name_entry.visible = mode == "menu"
 
-	start_button.position = bounds.position + Vector2(margin, 338.0)
-	start_button.size = Vector2(bounds.size.x - margin * 2.0, 64.0)
-	start_button.visible = normal
-	start_button.text = "ENTER THE ARENA" if mode == "menu" else "PLAY AGAIN"
+	name_entry.visible = is_home
+	name_entry.position = Vector2(pad, 673)
+	name_entry.size = Vector2(usable, 67)
 
-	shop_button.position = bounds.position + Vector2(margin, 426.0)
-	shop_button.size = Vector2((bounds.size.x - margin * 2.0 - 16.0) * 0.5, 61.0)
-	shop_button.visible = normal
-	secondary_button.position = shop_button.position + Vector2(shop_button.size.x + 16.0, 0.0)
+	start_button.visible = is_normal
+	start_button.position = Vector2(pad, 826)
+	start_button.size = Vector2(usable, 77)
+	start_button.text = "DEPLOY SPECIMEN" if is_home else "RE-ENTER ARENA"
+
+	shop_button.visible = is_normal
+	shop_button.position = Vector2(pad, 929)
+	shop_button.size = Vector2((usable-16.0)*0.5, 67)
+	shop_button.text = "COLLECTION"
+	secondary_button.visible = is_normal
+	secondary_button.position = Vector2(pad + (usable-16.0)*0.5 + 16.0, 929)
 	secondary_button.size = shop_button.size
-	secondary_button.text = "SETTINGS" if mode == "menu" else "HOME"
-	secondary_button.visible = normal
+	secondary_button.text = "SETTINGS" if is_home else "HOME"
 
-	var panel := _options_geometry(screen)
-	back_button.position = panel.position + Vector2(24.0, panel.size.y - 86.0)
-	back_button.size = Vector2(panel.size.x - 48.0, 60.0)
 	back_button.visible = is_shop or is_settings
+	back_button.position = Vector2(pad, h-127.0)
+	back_button.size = Vector2(usable, 71)
+	back_button.text = "RETURN  /  BACK"
 
 	for i in range(shop_buttons.size()):
-		var option: Dictionary = SKINS[i]
-		var skin_control: Button = shop_buttons[i]
-		var id: String = option["id"]
-		if id == equipped_skin:
-			skin_control.text = "EQUIPPED"
+		var item: Button = shop_buttons[i]
+		var skin: Dictionary = SKINS[i]
+		var id: String = skin["id"]
+		item.visible = is_shop
+		item.position = Vector2(w - 213.0, 406.0+float(i)*95.0)
+		item.size = Vector2(163, 59)
+		if equipped_skin == id:
+			item.text = "ACTIVE"
 		elif owned_skins.has(id):
-			skin_control.text = "EQUIP"
+			item.text = "EQUIP"
 		else:
-			skin_control.text = str(option["cost"]) + " COINS"
-		skin_control.position = panel.position + Vector2(panel.size.x - 196.0, 155.0 + float(i) * 79.0)
-		skin_control.size = Vector2(166.0, 58.0)
-		skin_control.visible = is_shop
-		skin_control.disabled = id == equipped_skin
+			item.text = str(skin["cost"])+" ◉"
+		item.disabled = equipped_skin == id
 
-	var setting_buttons := [settings_sound_button, settings_vibration_button, settings_theme_button]
+	var controls := [settings_sound_button,settings_vibration_button,settings_theme_button]
 	var labels := [
-		"SOUND EFFECTS     " + ("ON" if sound_enabled else "OFF"),
-		"VIBRATION              " + ("ON" if vibration_enabled else "OFF"),
-		"APPEARANCE          " + ("LIGHT" if light_mode else "DARK")
+		"AUDIO    " + ("ON" if sound_enabled else "OFF"),
+		"HAPTICS    " + ("ON" if vibration_enabled else "OFF"),
+		"THEME    " + ("LIGHT" if light_mode else "DARK")
 	]
-	for i in range(setting_buttons.size()):
-		var item: Button = setting_buttons[i]
-		item.text = labels[i]
-		item.position = panel.position + Vector2(43.0, 198.0 + float(i) * 106.0)
-		item.size = Vector2(panel.size.x - 86.0, 72.0)
-		item.visible = is_settings
-
-
-func _options_geometry(screen: Vector2) -> Rect2:
-	var width := minf(640.0, screen.x - 40.0)
-	var height := minf(885.0, screen.y - 64.0)
-	return Rect2((screen.x - width) * 0.5, (screen.y - height) * 0.5, width, height)
+	for i in range(controls.size()):
+		var control: Button = controls[i]
+		control.visible = is_settings
+		control.text = labels[i]
+		control.position = Vector2(pad, 438.0+float(i)*116.0)
+		control.size = Vector2(usable, 78)
 
 
 func _input(event: InputEvent) -> void:
@@ -790,9 +856,6 @@ func _draw() -> void:
 	draw_set_transform(camera_offset, 0.0, Vector2.ONE * camera_zoom)
 	_draw_arena()
 	draw_set_transform(Vector2.ZERO, 0.0, Vector2.ONE)
-	_draw_hud(viewport_size)
-	if mode != "playing":
-		_draw_overlay(viewport_size)
 	if damage_flash > 0.0 and mode == "playing":
 		draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(1.0, 0.25, 0.35, damage_flash * 0.18))
 
@@ -889,159 +952,6 @@ func _draw_skin_pattern(polygon: PackedVector2Array, center: Vector2, radius: fl
 				draw_circle(point, 2.0 + float(i % 3), Color(1.0, 0.99, 0.81, 0.78))
 
 
-
-
-func _draw_hud(viewport_size: Vector2) -> void:
-	var font := ThemeDB.fallback_font
-	draw_rect(Rect2(18, 18, 330, 164), Color(0.014, 0.035, 0.052, 0.83))
-	draw_string(font, Vector2(32, 50), "AMOEBA  ARENA", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, Color(0.40, 1.0, 0.78))
-	draw_string(font, Vector2(32, 82), "MASS " + str(int(ceil(player["mass"]))) + "    KOs " + str(takedowns), HORIZONTAL_ALIGNMENT_LEFT, 310, 21, Color.WHITE)
-	draw_string(font, Vector2(32, 109), "TIME " + str(int(survival_time)) + "s    COINS " + str(coins), HORIZONTAL_ALIGNMENT_LEFT, 310, 18, Color(1.0, 0.85, 0.51))
-	draw_string(font, Vector2(32, 135), "LEVEL " + str(level) + "     XP " + str(experience) + "/" + str(_experience_needed()), HORIZONTAL_ALIGNMENT_LEFT, 310, 17, Color(0.77, 0.89, 1.0))
-	var pct := clampf(float(experience) / float(_experience_needed()), 0.0, 1.0)
-	draw_rect(Rect2(32, 151, 296, 10), Color(0.07, 0.21, 0.27))
-	draw_rect(Rect2(32, 151, 296 * pct, 10), Color(0.47, 0.84, 1.0))
-	var map_rect := Rect2(viewport_size.x - 181.0, 20.0, 158.0, 158.0)
-	draw_rect(map_rect, Color(0.018, 0.045, 0.062, 0.83))
-	draw_rect(map_rect.grow(-8), Color(0.12, 0.27, 0.30, 0.47), false, 1.5)
-	for cell in cells:
-		if not cell["alive"]:
-			continue
-		var dot: Vector2 = map_rect.position + Vector2(8, 8) + (cell["pos"] / ARENA) * Vector2(142, 142)
-		draw_circle(dot, 4.5 if cell["human"] else 2.5, cell["color"])
-	_draw_leaderboard(viewport_size)
-	if mode == "playing":
-		draw_rect(Rect2(18, viewport_size.y - 112.0, 405, 68), Color(0.02, 0.06, 0.08, 0.75))
-		if crown_time > 0.0:
-			draw_string(font, Vector2(31, viewport_size.y - 87.0), "CELL CROWN  " + str(int(ceil(CROWN_HOLD_SECONDS - crown_time))) + "s TO WIN", HORIZONTAL_ALIGNMENT_LEFT, 378, 18, Color(1, 0.86, 0.44))
-			draw_rect(Rect2(32, viewport_size.y - 75.0, 364, 10), Color(0.12, 0.26, 0.27))
-			draw_rect(Rect2(32, viewport_size.y - 75.0, 364 * minf(1.0, crown_time / CROWN_HOLD_SECONDS), 10), Color(1.0, 0.79, 0.30))
-		else:
-			draw_string(font, Vector2(31, viewport_size.y - 88.0), "CELL CROWN: STAY #1 FOR 24s", HORIZONTAL_ALIGNMENT_LEFT, 380, 17, Color(0.81, 0.90, 0.84))
-		draw_string(font, Vector2(31, viewport_size.y - 56.0), "LIFT TO CRUISE  •  DRAG TO STEER", HORIZONTAL_ALIGNMENT_LEFT, 390, 16, Color(0.62, 0.82, 0.85))
-	if touch_index >= 0 and mode == "playing":
-		draw_circle(touch_origin, 68.0, Color(0.55, 0.92, 0.91, 0.09))
-		draw_arc(touch_origin, 68.0, 0, TAU, 50, Color(0.55, 0.92, 0.91, 0.46), 3.0, true)
-		var stick := touch_origin + (touch_position - touch_origin).limit_length(68.0)
-		draw_circle(stick, 26.0, Color(0.38, 1.0, 0.82, 0.72))
-	if mode == "playing" and player["mass"] < 33.0:
-		draw_string(font, Vector2(150, 212), "TINY = FAST  •  ESCAPE AND REGROW!", HORIZONTAL_ALIGNMENT_CENTER, 420, 17, Color(1.0, 0.83, 0.57))
-
-
-func _draw_leaderboard(viewport_size: Vector2) -> void:
-	var ranked := cells.duplicate()
-	ranked.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a["mass"] > b["mass"])
-	var left := viewport_size.x - 244.0
-	var top := 194.0
-	var width := 222.0
-	var row_height := 29.0
-	var rows: Array[Dictionary] = []
-	var user_in_top := false
-	for i in range(mini(7, ranked.size())):
-		rows.append({"cell": ranked[i], "rank": i + 1})
-		if ranked[i]["human"]:
-			user_in_top = true
-	if not user_in_top:
-		for i in range(ranked.size()):
-			if ranked[i]["human"]:
-				rows.append({"cell": ranked[i], "rank": i + 1})
-				break
-	draw_rect(Rect2(left, top, width, 48.0 + rows.size() * row_height + 7.0), Color(0.017, 0.045, 0.06, 0.85))
-	draw_string(ThemeDB.fallback_font, Vector2(left + 12, top + 29), "LEADERBOARD", HORIZONTAL_ALIGNMENT_LEFT, width - 16.0, 21, Color(0.46, 1.0, 0.81))
-	for i in range(rows.size()):
-		var row: Dictionary = rows[i]
-		var cell: Dictionary = row["cell"]
-		var y := top + 54.0 + i * row_height
-		if cell["human"]:
-			draw_rect(Rect2(left + 5, y - 20.0, width - 10.0, row_height - 1.0), Color(0.21, 0.68, 0.53, 0.37))
-		draw_circle(Vector2(left + 15, y - 7.0), 5.0, cell["color"])
-		var entry := str(row["rank"]) + ". " + str(cell["label"])
-		draw_string(ThemeDB.fallback_font, Vector2(left + 28, y), entry, HORIZONTAL_ALIGNMENT_LEFT, 133.0, 17, Color.WHITE if cell["human"] else Color(0.81, 0.93, 0.94))
-		draw_string(ThemeDB.fallback_font, Vector2(left + width - 53, y), str(int(cell["mass"])), HORIZONTAL_ALIGNMENT_RIGHT, 42.0, 17, Color(0.80, 1.0, 0.91))
-
-
-func _draw_overlay(viewport_size: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.01, 0.035, 0.052, 0.80))
-	if mode == "shop":
-		_draw_shop_overlay(viewport_size)
-		return
-	if mode == "settings":
-		_draw_settings_overlay(viewport_size)
-		return
-	var bounds := _menu_geometry(viewport_size)
-	draw_rect(bounds, Color(0.045, 0.13, 0.16, 0.97))
-	draw_rect(bounds, Color(0.36, 0.95, 0.78, 0.58), false, 2.0)
-	var top := bounds.position.y
-	if mode == "menu":
-		_center_text("AMOEBA ARENA", top + 57.0, 42, Color(0.39, 1.0, 0.79), viewport_size)
-		_center_text("CELL CROWN", top + 95.0, 19, Color(1.0, 0.83, 0.43), viewport_size)
-		_center_text("Engulf smaller cells. Survive. Evolve.", top + 145.0, 20, Color.WHITE, viewport_size)
-		_center_text("Hold first place for 24s to win!", top + 179.0, 20, Color(0.90, 0.78, 0.51), viewport_size)
-		_center_text("LVL " + str(level) + "    COINS " + str(coins) + "    WINS " + str(victories), top + 215.0, 18, Color(0.71, 0.89, 0.98), viewport_size)
-		_center_text("YOUR AMOEBA NAME", top + 246.0, 18, Color(0.73, 0.89, 0.90), viewport_size)
-	else:
-		if mode == "won":
-			_center_text("CELL CROWN CLAIMED!", top + 68.0, 36, Color(1.0, 0.85, 0.40), viewport_size)
-			_center_text(username + " ruled the arena", top + 128.0, 24, Color.WHITE, viewport_size)
-			_center_text("WIN BONUS  +150 XP   +100 COINS", top + 177.0, 21, Color(1.0, 0.91, 0.54), viewport_size)
-		else:
-			_center_text("YOU WERE CONSUMED", top + 75.0, 36, Color(1.0, 0.51, 0.59), viewport_size)
-			_center_text(username + " survived " + str(int(survival_time)) + " seconds", top + 132.0, 23, Color.WHITE, viewport_size)
-		_center_text("ROUND TOTAL  +" + str(round_xp) + " XP   +" + str(round_coins) + " COINS", top + 221.0, 20, Color(1.0, 0.87, 0.56), viewport_size)
-		_center_text("LEVEL " + str(level) + "    COINS " + str(coins), top + 265.0, 21, Color(0.77, 0.94, 0.99), viewport_size)
-	_center_text("LEVEL PERKS  •  ALWAYS ACTIVE", top + 512.0, 17, Color(0.40, 1.0, 0.83), viewport_size)
-	var bonus_line := "Magnet +" + str(int(_pickup_bonus())) + "   Food +" + str(int(_food_bonus() * 100.0)) + "%   Start +" + str(int(_starting_mass_bonus()))
-	_center_text(bonus_line, top + 540.0, 17, Color(0.81, 0.95, 0.94), viewport_size)
-
-
-func _draw_shop_overlay(screen: Vector2) -> void:
-	var panel := _options_geometry(screen)
-	draw_rect(panel, Color(0.042, 0.11, 0.15, 0.98))
-	draw_rect(panel, Color(0.36, 0.93, 0.78, 0.55), false, 2.0)
-	var left := panel.position.x
-	var top := panel.position.y
-	var font := ThemeDB.fallback_font
-	draw_string(font, Vector2(left + 28.0, top + 54.0), "CELL SKIN LAB", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 56.0, 39, Color(0.44, 1.0, 0.81))
-	draw_string(font, Vector2(left + 29.0, top + 94.0), "WALLET  " + str(coins) + " COINS", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 58.0, 24, Color(1.0, 0.84, 0.49))
-	draw_string(font, Vector2(left + 29.0, top + 124.0), "Cosmetics only — all skins have equal power.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 58.0, 17, Color(0.77, 0.91, 0.94))
-	for index in range(SKINS.size()):
-		var skin: Dictionary = SKINS[index]
-		var y := top + 151.0 + float(index) * 79.0
-		draw_rect(Rect2(left + 20.0, y, panel.size.x - 40.0, 68.0), Color(0.10, 0.23, 0.28, 0.83))
-		var color: Color = _skin_render_color(str(skin["id"]))
-		var center := Vector2(left + 55.0, y + 33.0)
-		draw_circle(center, 24.0, color)
-		draw_arc(center, 24.0, 0.0, TAU, 32, color.lightened(0.38), 3.4, true)
-		if skin["id"] == "rainbow":
-			for dot in range(6):
-				var angle := float(dot) * TAU / 6.0
-				draw_circle(center + Vector2.from_angle(angle) * 13.0, 3.4, Color.from_hsv(float(dot) / 6.0 + fposmod(clock * 0.07, 1.0), 0.88, 1.0))
-		elif skin["id"] == "galaxy":
-			for dot in range(5):
-				draw_circle(center + Vector2.from_angle(float(dot) * 2.399) * 11.0, 1.9, Color(1, 1, 1, 0.9))
-		elif skin["id"] == "gold":
-			draw_circle(center, 7.0, Color(1, 1, 0.74, 0.80))
-		draw_string(font, Vector2(left + 96.0, y + 28.0), str(skin["name"]), HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 306.0, 21, Color.WHITE)
-		draw_string(font, Vector2(left + 96.0, y + 53.0), str(skin["detail"]), HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 306.0, 15, Color(0.73, 0.87, 0.90))
-	draw_string(font, Vector2(left + 26.0, top + 746.0), shop_message, HORIZONTAL_ALIGNMENT_CENTER, panel.size.x - 52.0, 18, Color(1.0, 0.86, 0.51))
-
-
-func _draw_settings_overlay(screen: Vector2) -> void:
-	var panel := _options_geometry(screen)
-	draw_rect(panel, Color(0.042, 0.11, 0.15, 0.98))
-	draw_rect(panel, Color(0.36, 0.93, 0.78, 0.55), false, 2.0)
-	var x := panel.position.x
-	var top := panel.position.y
-	var font := ThemeDB.fallback_font
-	draw_string(font, Vector2(x + 31.0, top + 65.0), "SETTINGS", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 62.0, 44, Color(0.44, 1.0, 0.81))
-	draw_string(font, Vector2(x + 31.0, top + 119.0), "Your preferences save automatically.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 62.0, 21, Color(0.80, 0.92, 0.94))
-	draw_string(font, Vector2(x + 35.0, top + 575.0), "Audio is generated locally — no files or downloads.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 70.0, 17, Color(0.79, 0.89, 0.91))
-	draw_string(font, Vector2(x + 35.0, top + 611.0), "Light mode changes the arena background.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 70.0, 17, Color(0.79, 0.89, 0.91))
-	draw_string(font, Vector2(x + 35.0, top + 647.0), "Vibration works on supported Android devices.", HORIZONTAL_ALIGNMENT_LEFT, panel.size.x - 70.0, 17, Color(0.79, 0.89, 0.91))
-
-
-func _center_text(text_value: String, y: float, size: int, tint: Color, viewport_size: Vector2) -> void:
-	draw_string(ThemeDB.fallback_font, Vector2(0, y), text_value, HORIZONTAL_ALIGNMENT_CENTER, viewport_size.x, size, tint)
 
 
 func _load_record() -> void:
