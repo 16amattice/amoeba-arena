@@ -81,9 +81,13 @@ jobs:
 
       - name: Smoke-test gameplay mechanics
         run: |
+          set +e
           timeout 45s godot --headless --path . --script res://tests/arena_smoke.gd > smoke.log 2>&1
+          status=$?
+          set -e
           cat smoke.log
           if grep -E 'SCRIPT ERROR:|Parse Error:' smoke.log; then exit 1; fi
+          exit "$status"
 
       - name: Export debug APK
         run: |
