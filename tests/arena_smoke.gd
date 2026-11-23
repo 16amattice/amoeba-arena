@@ -1,4 +1,5 @@
 extends SceneTree
+const CellGeometry = preload("res://scripts/cell_geometry.gd")
 ## Headless smoke tests: tissue subtraction, wall projection, momentum, economics.
 
 func _initialize() -> void:
@@ -29,7 +30,7 @@ func _run_checks() -> void:
 		return
 
 	var wall = game._make_cell(Vector2(8, 8), 400.0, Color.BLUE, "CORNER", false)
-	var pieces = game.CellGeometry.world_shapes(wall, game.ARENA)
+	var pieces = CellGeometry.world_shapes(wall, game.ARENA)
 	for polygon in pieces:
 		for vertex in polygon:
 			if vertex.x < 0.0 or vertex.y < 0.0 or vertex.x > game.ARENA.x or vertex.y > game.ARENA.y:
@@ -39,16 +40,16 @@ func _run_checks() -> void:
 	var eater = game._make_cell(Vector2(870, 800), 260.0, Color.RED, "BIG", false)
 	var victim = game._make_cell(Vector2(800, 800), 100.0, Color.GREEN, "PREY", false)
 	var original_mass: float = victim["mass"]
-	var original_area: float = game.CellGeometry.visible_area(victim, game.ARENA)
-	var part: Dictionary = game.CellGeometry.consume(eater, victim, game.ARENA)
+	var original_area: float = CellGeometry.visible_area(victim, game.ARENA)
+	var part: Dictionary = CellGeometry.consume(eater, victim, game.ARENA)
 	if part["mass"] <= 0.0 or victim["mass"] >= original_mass or not victim["alive"]:
 		_fail("Partial overlap must remove actual tissue without killing victim")
 		return
-	if game.CellGeometry.visible_area(victim, game.ARENA) >= original_area:
+	if CellGeometry.visible_area(victim, game.ARENA) >= original_area:
 		_fail("Physical remaining shape must lose actual visible area")
 		return
 	eater["pos"] = victim["pos"]
-	var finish: Dictionary = game.CellGeometry.consume(eater, victim, game.ARENA)
+	var finish: Dictionary = CellGeometry.consume(eater, victim, game.ARENA)
 	if not finish["dead"] or victim["alive"] or victim["mass"] > 0.0:
 		_fail("Full overlap must consume every part and eliminate prey")
 		return

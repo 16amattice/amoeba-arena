@@ -25,7 +25,7 @@ static func total_area(polygons: Array[PackedVector2Array]) -> float:
 
 
 static func initial_shapes(mass: float, seed: float) -> Array[PackedVector2Array]:
-	var radius := sqrtf(maxf(1.0, mass) * AREA_PER_MASS / PI)
+	var radius := sqrt(maxf(1.0, mass) * AREA_PER_MASS / PI)
 	var body := PackedVector2Array()
 	for i in range(64):
 		var angle := TAU * float(i) / 64.0
@@ -34,7 +34,7 @@ static func initial_shapes(mass: float, seed: float) -> Array[PackedVector2Array
 				+ 0.024 * sin(angle * 7.0 + seed * 1.4)
 		body.append(Vector2.from_angle(angle) * radius * ripple)
 	# Set mass precisely from the body's actual area, not its bounding circle.
-	var normalization := sqrtf((mass * AREA_PER_MASS) / maxf(1.0, polygon_area(body)))
+	var normalization := sqrt((mass * AREA_PER_MASS) / maxf(1.0, polygon_area(body)))
 	for i in range(body.size()):
 		body[i] *= normalization
 	var result: Array[PackedVector2Array] = [body]
@@ -69,7 +69,7 @@ static func grow(cell: Dictionary, gain: float) -> void:
 		return
 	var previous: float = maxf(0.01, cell["mass"])
 	var new_mass := previous + gain
-	var factor := sqrtf(new_mass / previous)
+	var factor := sqrt(new_mass / previous)
 	var grown: Array[PackedVector2Array] = []
 	for polygon in cell["shapes"]:
 		var expanded := PackedVector2Array()

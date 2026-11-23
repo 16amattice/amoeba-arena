@@ -601,7 +601,7 @@ func _draw_cell(cell: Dictionary) -> void:
 				c += point
 			nucleus = c / float(polygon.size())
 	if main_area > 130.0:
-		draw_circle(nucleus, minf(radius * 0.18, sqrtf(main_area / PI) * 0.24), Color(0.05, 0.25, 0.31, 0.21))
+		draw_circle(nucleus, minf(radius * 0.18, sqrt(main_area / PI) * 0.24), Color(0.05, 0.25, 0.31, 0.21))
 		draw_circle(nucleus + Vector2(-3, -3), minf(radius * 0.095, 13.0), Color(1, 1, 1, 0.17))
 	if radius < 12.0:
 		return
