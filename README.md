@@ -51,3 +51,29 @@ This is a single-player prototype, not online multiplayer yet. Sound, lobbies, s
 - Start menu lets you type a username (saved locally) which appears above your amoeba and in the live, mass-ranked leaderboard with AI.
 
 This leaderboard is **local to your current offline arena**. It is not an online global ranking.
+
+
+## Prototype 0.3 — Cell Crown
+
+- Body tissue is represented by editable polygon shapes. Larger cells geometrically subtract covered areas of smaller opponents; surviving fragments remain instead of respawning as circles or losing abstract hit points.
+- Cells visually and physically conform to walls and corners. Moving into a corner flattens the membrane inside arena boundaries.
+- Cruising movement retains the last touch direction and throttle on release. Drag again to steer.
+- **Cell Crown**: Reach first place at a mass of at least 220, then stay first for 24 consecutive seconds to win.
+- Permanent local player progression with XP, levels and coins, used for future abilities and skins.
+
+### Reward rules
+
+| Action | XP | Coins |
+| --- | ---: | ---: |
+| Survive one second | 1 | 0 |
+| Every 12 seconds alive | 2 | 3 |
+| Eat one nutrient | 1 | 0 |
+| Every 12 nutrients | 4 | 2 |
+| Consume 5 mass of a rival | 3 | 0 |
+| Eliminate a rival | 32 | 16 |
+| Win Cell Crown | 150 | 100 |
+| Level up | — | 10 + 4 × new level |
+
+Profile stored in user://amoeba_progress.cfg. Current coins/XP don't purchase anything yet. Win condition is for the local AI arena, not multiplayer.
+
+**APK debug-signing caveat:** CI generates a temporary key each build. Upgrading from v0.2 requires uninstalling the old APK, which clears its saved local data. Later APKs will also need stable signing for reliable in-place upgrades.

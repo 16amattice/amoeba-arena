@@ -213,7 +213,7 @@ func _layout_menu_controls() -> void:
 	start_button.size = Vector2(bounds.size.x - margin * 2.0, 64.0)
 	name_entry.visible = mode == "menu"
 	start_button.visible = mode != "playing"
-	if mode == "dead":
+	if mode == "dead" or mode == "won":
 		start_button.text = "PLAY AGAIN"
 	elif mode == "menu":
 		start_button.text = "ENTER THE ARENA"
@@ -612,28 +612,39 @@ func _draw_cell(cell: Dictionary) -> void:
 
 func _draw_hud(viewport_size: Vector2) -> void:
 	var font := ThemeDB.fallback_font
-	draw_rect(Rect2(20, 20, 252, 115), Color(0.015, 0.035, 0.06, 0.77))
-	draw_string(font, Vector2(37, 53), "AMOEBA  ARENA", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, Color(0.40, 1.0, 0.78))
-	draw_string(font, Vector2(37, 88), "MASS   " + str(int(ceil(player["mass"]))), HORIZONTAL_ALIGNMENT_LEFT, -1, 21, Color.WHITE)
-	draw_string(font, Vector2(37, 115), "KOs  " + str(takedowns) + "    TIME  " + str(int(survival_time)) + "s", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.68, 0.83, 0.85))
-	var map_rect := Rect2(viewport_size.x - 182.0, 20.0, 160.0, 160.0)
+	draw_rect(Rect2(18, 18, 330, 164), Color(0.014, 0.035, 0.052, 0.83))
+	draw_string(font, Vector2(32, 50), "AMOEBA  ARENA", HORIZONTAL_ALIGNMENT_LEFT, -1, 23, Color(0.40, 1.0, 0.78))
+	draw_string(font, Vector2(32, 82), "MASS " + str(int(ceil(player["mass"]))) + "    KOs " + str(takedowns), HORIZONTAL_ALIGNMENT_LEFT, 310, 21, Color.WHITE)
+	draw_string(font, Vector2(32, 109), "TIME " + str(int(survival_time)) + "s    COINS " + str(coins), HORIZONTAL_ALIGNMENT_LEFT, 310, 18, Color(1.0, 0.85, 0.51))
+	draw_string(font, Vector2(32, 135), "LEVEL " + str(level) + "     XP " + str(experience) + "/" + str(_experience_needed()), HORIZONTAL_ALIGNMENT_LEFT, 310, 17, Color(0.77, 0.89, 1.0))
+	var pct := clampf(float(experience) / float(_experience_needed()), 0.0, 1.0)
+	draw_rect(Rect2(32, 151, 296, 10), Color(0.07, 0.21, 0.27))
+	draw_rect(Rect2(32, 151, 296 * pct, 10), Color(0.47, 0.84, 1.0))
+	var map_rect := Rect2(viewport_size.x - 181.0, 20.0, 158.0, 158.0)
 	draw_rect(map_rect, Color(0.018, 0.045, 0.062, 0.83))
 	draw_rect(map_rect.grow(-8), Color(0.12, 0.27, 0.30, 0.47), false, 1.5)
 	for cell in cells:
 		if not cell["alive"]:
 			continue
-		var dot: Vector2 = map_rect.position + Vector2(8, 8) + (cell["pos"] / ARENA) * Vector2(144, 144)
+		var dot: Vector2 = map_rect.position + Vector2(8, 8) + (cell["pos"] / ARENA) * Vector2(142, 142)
 		draw_circle(dot, 4.5 if cell["human"] else 2.5, cell["color"])
 	_draw_leaderboard(viewport_size)
+	if mode == "playing":
+		draw_rect(Rect2(18, viewport_size.y - 112.0, 405, 68), Color(0.02, 0.06, 0.08, 0.75))
+		if crown_time > 0.0:
+			draw_string(font, Vector2(31, viewport_size.y - 87.0), "CELL CROWN  " + str(int(ceil(CROWN_HOLD_SECONDS - crown_time))) + "s TO WIN", HORIZONTAL_ALIGNMENT_LEFT, 378, 18, Color(1, 0.86, 0.44))
+			draw_rect(Rect2(32, viewport_size.y - 75.0, 364, 10), Color(0.12, 0.26, 0.27))
+			draw_rect(Rect2(32, viewport_size.y - 75.0, 364 * minf(1.0, crown_time / CROWN_HOLD_SECONDS), 10), Color(1.0, 0.79, 0.30))
+		else:
+			draw_string(font, Vector2(31, viewport_size.y - 88.0), "CELL CROWN: STAY #1 FOR 24s", HORIZONTAL_ALIGNMENT_LEFT, 380, 17, Color(0.81, 0.90, 0.84))
+		draw_string(font, Vector2(31, viewport_size.y - 56.0), "LIFT TO CRUISE  •  DRAG TO STEER", HORIZONTAL_ALIGNMENT_LEFT, 390, 16, Color(0.62, 0.82, 0.85))
 	if touch_index >= 0 and mode == "playing":
 		draw_circle(touch_origin, 68.0, Color(0.55, 0.92, 0.91, 0.09))
 		draw_arc(touch_origin, 68.0, 0, TAU, 50, Color(0.55, 0.92, 0.91, 0.46), 3.0, true)
 		var stick := touch_origin + (touch_position - touch_origin).limit_length(68.0)
 		draw_circle(stick, 26.0, Color(0.38, 1.0, 0.82, 0.72))
-	elif mode == "playing":
-		draw_string(font, Vector2(25, viewport_size.y - 28), "DRAG TO MOVE   /   WASD OR MOUSE", HORIZONTAL_ALIGNMENT_LEFT, -1, 16, Color(0.62, 0.82, 0.85, 0.75))
 	if mode == "playing" and player["mass"] < 33.0:
-		draw_string(font, Vector2(viewport_size.x * 0.5 - 200.0, 64), "TINY = FAST  •  ESCAPE AND REGROW!", HORIZONTAL_ALIGNMENT_CENTER, 400.0, 18, Color(1.0, 0.83, 0.57))
+		draw_string(font, Vector2(150, 212), "TINY = FAST  •  ESCAPE AND REGROW!", HORIZONTAL_ALIGNMENT_CENTER, 420, 17, Color(1.0, 0.83, 0.57))
 
 
 func _draw_leaderboard(viewport_size: Vector2) -> void:
@@ -669,23 +680,31 @@ func _draw_leaderboard(viewport_size: Vector2) -> void:
 
 
 func _draw_overlay(viewport_size: Vector2) -> void:
-	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.01, 0.035, 0.052, 0.77))
+	draw_rect(Rect2(Vector2.ZERO, viewport_size), Color(0.01, 0.035, 0.052, 0.79))
 	var bounds := _menu_geometry(viewport_size)
-	draw_rect(bounds, Color(0.045, 0.13, 0.16, 0.96))
+	draw_rect(bounds, Color(0.045, 0.13, 0.16, 0.97))
 	draw_rect(bounds, Color(0.36, 0.95, 0.78, 0.58), false, 2.0)
 	var top := bounds.position.y
 	if mode == "menu":
-		_center_text("AMOEBA ARENA", top + 70.0, 42, Color(0.39, 1.0, 0.79), viewport_size)
-		_center_text("EAT  •  ESCAPE  •  EVOLVE", top + 109.0, 18, Color(0.90, 0.98, 0.99), viewport_size)
-		_center_text("Bigger cells can bite smaller ones.", top + 161.0, 21, Color.WHITE, viewport_size)
-		_center_text("Lose mass, gain speed. Eat dots to recover.", top + 194.0, 18, Color(0.90, 0.78, 0.51), viewport_size)
-		_center_text("YOUR AMOEBA NAME", top + 244.0, 18, Color(0.73, 0.89, 0.90), viewport_size)
-		_center_text("Move by dragging anywhere on screen.", top + 430.0, 17, Color(0.67, 0.87, 0.87), viewport_size)
+		_center_text("AMOEBA ARENA", top + 57.0, 42, Color(0.39, 1.0, 0.79), viewport_size)
+		_center_text("CELL CROWN", top + 95.0, 19, Color(1.0, 0.83, 0.43), viewport_size)
+		_center_text("Engulf smaller cells. Keep the tissue you save.", top + 145.0, 20, Color.WHITE, viewport_size)
+		_center_text("Reach #1 and hold it for 24s to win.", top + 179.0, 20, Color(0.90, 0.78, 0.51), viewport_size)
+		_center_text("LVL " + str(level) + "    COINS " + str(coins) + "    WINS " + str(victories), top + 214.0, 18, Color(0.71, 0.89, 0.98), viewport_size)
+		_center_text("YOUR AMOEBA NAME", top + 245.0, 18, Color(0.73, 0.89, 0.90), viewport_size)
+		_center_text("Drag to steer. Let go to keep cruising.", top + 431.0, 17, Color(0.67, 0.87, 0.87), viewport_size)
+	elif mode == "won":
+		_center_text("CELL CROWN CLAIMED!", top + 68.0, 37, Color(1.0, 0.85, 0.40), viewport_size)
+		_center_text(username + " ruled the arena", top + 119.0, 25, Color.WHITE, viewport_size)
+		_center_text("WIN BONUS  +150 XP   +100 COINS", top + 174.0, 21, Color(1.0, 0.91, 0.54), viewport_size)
+		_center_text("ROUND TOTAL  +" + str(round_xp) + " XP   +" + str(round_coins) + " COINS", top + 213.0, 19, Color(0.73, 0.92, 1.0), viewport_size)
+		_center_text("LVL " + str(level) + "    COINS " + str(coins) + "    TIME " + str(int(survival_time)) + "s", top + 280.0, 20, Color.WHITE, viewport_size)
 	else:
-		_center_text("YOU WERE CONSUMED", top + 82.0, 36, Color(1.0, 0.51, 0.59), viewport_size)
-		_center_text(username + " survived " + str(int(survival_time)) + " seconds", top + 148.0, 23, Color.WHITE, viewport_size)
-		_center_text("Best mass  " + str(best_mass) + "     KOs  " + str(takedowns), top + 198.0, 22, Color(0.79, 0.94, 0.95), viewport_size)
-		_center_text("Every bite matters. Every escape counts.", top + 273.0, 20, Color(0.71, 0.85, 0.89), viewport_size)
+		_center_text("YOU WERE CONSUMED", top + 75.0, 37, Color(1.0, 0.51, 0.59), viewport_size)
+		_center_text(username + " survived " + str(int(survival_time)) + " seconds", top + 133.0, 23, Color.WHITE, viewport_size)
+		_center_text("ROUND TOTAL  +" + str(round_xp) + " XP   +" + str(round_coins) + " COINS", top + 191.0, 20, Color(1.0, 0.87, 0.56), viewport_size)
+		_center_text("LEVEL " + str(level) + "    COINS " + str(coins), top + 238.0, 22, Color(0.77, 0.94, 0.99), viewport_size)
+		_center_text("BEST TIME " + str(best_survival) + "s     KOs " + str(takedowns), top + 285.0, 19, Color(0.77, 0.90, 0.90))
 
 
 func _center_text(text_value: String, y: float, size: int, tint: Color, viewport_size: Vector2) -> void:
