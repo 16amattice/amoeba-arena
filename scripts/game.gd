@@ -329,6 +329,7 @@ func _start_game() -> void:
 		name_entry.release_focus()
 	if start_button != null:
 		start_button.visible = false
+	_layout_menu_controls()
 	DisplayServer.virtual_keyboard_hide()
 
 
@@ -656,9 +657,13 @@ func _consume_food() -> void:
 		for cell in cells:
 			if not cell["alive"]:
 				continue
-			var radius: float = _cell_radius(cell) * 0.83 + PICKUP_RADIUS + float(morsel["radius"])
+			var bonus := _pickup_bonus() if cell["human"] else 0.0
+			var radius: float = _cell_radius(cell) * 0.83 + PICKUP_RADIUS + bonus + float(morsel["radius"])
 			if cell["pos"].distance_squared_to(morsel["pos"]) < radius * radius:
-				CellGeometry.grow(cell, float(morsel["mass"]))
+				var nutrients := float(morsel["mass"]) * (1.0 + _food_bonus() if cell["human"] else 1.0)
+				CellGeometry.grow(cell, nutrients)
+				if cell["human"]:
+					_play_sfx("pellet")
 				if cell["human"]:
 					cell["food_count"] += 1
 					pellet_tick += 1
@@ -704,6 +709,8 @@ func _resolve_bites(_delta: float) -> void:
 			CellGeometry.grow(eater, taken * 0.88)
 			victim["impact"] = 1.0
 			eater["impact"] = maxf(float(eater["impact"]), 0.45)
+			if eater["human"] or victim["human"]:
+				_play_sfx("bite")
 			var position: Vector2 = result["position"]
 			_spawn_bite_droplets(position, victim["color"])
 			if victim["human"]:
@@ -718,6 +725,7 @@ func _resolve_bites(_delta: float) -> void:
 				if eater["human"]:
 					takedowns += 1
 					_award(32, 16)
+					_vibrate(55)
 
 
 func _spawn_bite_droplets(position: Vector2, color: Color) -> void:
@@ -979,6 +987,8 @@ func _award(xp: int, gained_coins: int) -> void:
 	while experience >= _experience_needed():
 		experience -= _experience_needed()
 		level += 1
+		_play_sfx("level")
+		_vibrate(75)
 		var level_bonus := 10 + level * 4
 		coins += level_bonus
 		round_coins += level_bonus
@@ -1021,6 +1031,8 @@ func _end_round(was_victory: bool) -> void:
 	if mode != "playing":
 		return
 	mode = "won" if was_victory else "dead"
+	_play_sfx("win" if was_victory else "lose")
+	_vibrate(140 if was_victory else 65)
 	best_survival = maxi(best_survival, int(survival_time))
 	_save_record()
 	_save_profile()
