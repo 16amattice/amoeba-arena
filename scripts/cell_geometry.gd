@@ -2,9 +2,9 @@ extends RefCounted
 ## Physical amoeba geometry. Each body's polygons ARE its remaining tissue.
 ## Boolean subtraction removes exactly the overlapped region. No health bar or
 ## damage-per-second exists: death only occurs when the body has been consumed.
-const AREA_PER_MASS := 50.0
-const MIN_FRAGMENT_AREA := 3.0
-const MIN_ALIVE_MASS := 0.6
+const AREA_PER_MASS = 50.0
+const MIN_FRAGMENT_AREA = 3.0
+const MIN_ALIVE_MASS = 0.6
 
 static func polygon_area(points: PackedVector2Array) -> float:
 	if points.size() < 3:

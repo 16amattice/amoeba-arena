@@ -704,7 +704,7 @@ func _draw_overlay(viewport_size: Vector2) -> void:
 		_center_text(username + " survived " + str(int(survival_time)) + " seconds", top + 133.0, 23, Color.WHITE, viewport_size)
 		_center_text("ROUND TOTAL  +" + str(round_xp) + " XP   +" + str(round_coins) + " COINS", top + 191.0, 20, Color(1.0, 0.87, 0.56), viewport_size)
 		_center_text("LEVEL " + str(level) + "    COINS " + str(coins), top + 238.0, 22, Color(0.77, 0.94, 0.99), viewport_size)
-		_center_text("BEST TIME " + str(best_survival) + "s     KOs " + str(takedowns), top + 285.0, 19, Color(0.77, 0.90, 0.90))
+		_center_text("BEST TIME " + str(best_survival) + "s     KOs " + str(takedowns), top + 285.0, 19, Color(0.77, 0.90, 0.90), viewport_size)
 
 
 func _center_text(text_value: String, y: float, size: int, tint: Color, viewport_size: Vector2) -> void:
