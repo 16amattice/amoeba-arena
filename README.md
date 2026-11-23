@@ -77,3 +77,12 @@ This leaderboard is **local to your current offline arena**. It is not an online
 Profile stored in user://amoeba_progress.cfg. Current coins/XP don't purchase anything yet. Win condition is for the local AI arena, not multiplayer.
 
 **APK debug signing:** The v0.3 workflow caches a debug signing key across CI builds to preserve app upgrade compatibility while GitHub retains that cache. The first v0.3 install may still require uninstalling v0.2 (which deletes old app data). Cached keys can expire or be evicted, and this is not production-grade key management. A durable private release signing key is still necessary for long-term installs.
+
+
+## Prototype 0.4: Surface tension and soft walls
+
+- After a geometric bite, the actual wound stays visible briefly; escaping cells relax back into a smooth, smaller circular amoeba, without regaining any eaten mass.
+- Cells continuously pulse and jiggle while swimming, including after recovery.
+- Replaced hard vertex clipping at arena boundaries with a smooth, area-preserving deformation: approaching a wall flattens the side facing it and gently expands the opposite side. Corner pressure creates a slightly squarer silhouette, improving corner coverage.
+- Rendering and bite collision use exactly the same membrane coordinates; no separate clamping or stacked translucent fills at the wall.
+- Preserved the v0.3 portrait layout, cruise steering, Cell Crown win condition and locally saved XP/coins.

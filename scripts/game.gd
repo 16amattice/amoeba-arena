@@ -111,6 +111,8 @@ func _make_cell(position: Vector2, mass: float, color: Color, label: String, hum
 		"vel": Vector2.ZERO,
 		"mass": mass,
 		"shapes": CellGeometry.initial_shapes(mass, seed),
+		"needs_reform": false,
+		"reform_delay": 0.0,
 		"color": color,
 		"label": label,
 		"human": human,
@@ -261,6 +263,8 @@ func _process(delta: float) -> void:
 		_gain_survival_rewards(delta)
 		_think_for_bots(delta)
 		_move_cells(delta)
+		for cell in cells:
+			CellGeometry.relax(cell, delta)
 		_consume_food()
 		_resolve_bites(delta)
 		_cleanup_dead()
@@ -374,10 +378,12 @@ func _move_cells(delta: float) -> void:
 		var desired_velocity: Vector2 = direction * _cell_speed(cell)
 		var responsiveness := 9.0 if cell["human"] else 3.7
 		cell["vel"] = cell["vel"].lerp(desired_velocity, minf(1.0, delta * responsiveness))
-		# Constrain the center only to the playable area. Shape vertices are
-		# conformed to the wall separately: a blob can flatten into a corner.
+		# Reserve most of the natural body radius for the membrane.
+		# This avoids the severe clipping/squashing when the center reached 8px.
+		# A gentle area-preserving warp makes the rest touch the wall.
 		var next_pos: Vector2 = cell["pos"] + cell["vel"] * delta
-		cell["pos"] = next_pos.clamp(Vector2(8.0, 8.0), ARENA - Vector2(8.0, 8.0))
+		var wall_padding: float = CellGeometry.minimum_center(float(cell["mass"]))
+		cell["pos"] = next_pos.clamp(Vector2.ONE * wall_padding, ARENA - Vector2.ONE * wall_padding)
 		if cell["vel"].length() > 8.0:
 			cell["direction"] = lerp_angle(cell["direction"], cell["vel"].angle(), minf(1.0, delta * 4.0))
 		cell["phase"] += delta * (1.65 + cell["vel"].length() * 0.005)
@@ -529,7 +535,6 @@ func _draw_arena() -> void:
 		draw_line(Vector2(x, 0), Vector2(x, ARENA.y), Color(0.22, 0.40, 0.44, 0.13), 1.5)
 	for y in range(0, int(ARENA.y) + 1, GRID_SPACING):
 		draw_line(Vector2(0, y), Vector2(ARENA.x, y), Color(0.22, 0.40, 0.44, 0.13), 1.5)
-	draw_rect(Rect2(Vector2.ZERO, ARENA), Color(0.21, 0.84, 0.80, 0.65), false, 12.0)
 	for morsel in food:
 		if not _visible(morsel["pos"], 10.0):
 			continue
@@ -545,6 +550,8 @@ func _draw_arena() -> void:
 	for cell in sorted_cells:
 		if cell["alive"] and _visible(cell["pos"], _cell_radius(cell) + 20.0):
 			_draw_cell(cell)
+	# Draw arena outline LAST so the wall always stays visually crisp.
+	draw_rect(Rect2(Vector2.ZERO, ARENA), Color(0.21, 0.84, 0.80, 0.85), false, 5.0)
 	for particle in particles:
 		var shade: Color = particle["color"]
 		shade.a = clampf(particle["life"] / particle["max_life"], 0.0, 1.0)
@@ -555,58 +562,35 @@ func _draw_cell(cell: Dictionary) -> void:
 	var center: Vector2 = cell["pos"]
 	var radius := _cell_radius(cell)
 	var tint: Color = cell["color"]
-	var seed: float = cell["phase"]
-	var movement: float = clampf(cell["vel"].length() / 340.0, 0.0, 1.0)
+	# Exactly the SAME area-preserving wall geometry used by the eater.
+	# No second clamping pass, multiplied semi-transparent polygons, or
+	# collapsed vertices that could make the cell flicker/discolor at walls.
 	var pieces: Array[PackedVector2Array] = CellGeometry.world_shapes(cell, ARENA)
+	var largest_piece := PackedVector2Array()
+	var largest_area := 0.0
 	for polygon in pieces:
-		var contour := PackedVector2Array()
-		var bounds_center := Vector2.ZERO
-		for point in polygon:
-			bounds_center += point
-		bounds_center /= float(polygon.size())
-		for point in polygon:
-			var from_center: Vector2 = point - bounds_center
-			var angle := from_center.angle()
-			var stretch := 1.0 + 0.018 * sin(angle * 5.0 + seed)
-			stretch += 0.022 * movement * cos(angle - float(cell["direction"]))
-			stretch += 0.011 * float(cell["impact"]) * sin(angle * 11.0 - clock * 27.0)
-			var soft: Vector2 = bounds_center + from_center * stretch
-			soft = soft.clamp(Vector2.ZERO, ARENA)
-			contour.append(soft)
-		if contour.size() < 3:
+		if polygon.size() < 3:
 			continue
-		var shadow := PackedVector2Array()
-		for point in contour:
-			shadow.append((point + Vector2(2.0, 6.0)).clamp(Vector2.ZERO, ARENA))
-		draw_colored_polygon(shadow, Color(0.0, 0.02, 0.04, 0.31))
-		draw_colored_polygon(contour, tint.darkened(0.22))
-		var inner := PackedVector2Array()
-		for point in contour:
-			inner.append(point.lerp(bounds_center, 0.09).clamp(Vector2.ZERO, ARENA))
-		draw_colored_polygon(inner, tint)
-		var closed := contour.duplicate()
-		closed.append(contour[0])
-		draw_polyline(closed, tint.lightened(0.32), 3.0, true)
-
-	# Each surviving fragment remains real tissue. Put a faint organelle on
-	# the biggest fragment without covering any chunks bitten away.
-	var main_area := 0.0
-	var nucleus := center
-	for polygon in pieces:
 		var area: float = CellGeometry.polygon_area(polygon)
-		if area > main_area:
-			main_area = area
-			var c := Vector2.ZERO
-			for point in polygon:
-				c += point
-			nucleus = c / float(polygon.size())
-	if main_area > 130.0:
-		draw_circle(nucleus, minf(radius * 0.18, sqrt(main_area / PI) * 0.24), Color(0.05, 0.25, 0.31, 0.21))
-		draw_circle(nucleus + Vector2(-3, -3), minf(radius * 0.095, 13.0), Color(1, 1, 1, 0.17))
+		if area <= 2.0:
+			continue
+		draw_colored_polygon(polygon, tint)
+		var closed := polygon.duplicate()
+		closed.append(polygon[0])
+		draw_polyline(closed, tint.lightened(0.23), 2.5, true)
+		if area > largest_area:
+			largest_area = area
+			largest_piece = polygon
+	# Organelles are visible in rounded cells, but hidden while a fresh
+	# chunk is missing; otherwise a nucleus could float in an eaten hole.
+	if largest_area > 150.0 and not bool(cell.get("needs_reform", false)):
+		if Geometry2D.is_point_in_polygon(center, largest_piece):
+			draw_circle(center, minf(radius * 0.18, 19.0), Color(0.035, 0.29, 0.35, 0.20))
+			draw_circle(center + Vector2(-2.5, -2.5), minf(radius * 0.09, 9.0), Color(1, 1, 1, 0.18))
 	if radius < 12.0:
 		return
 	var font := ThemeDB.fallback_font
-	draw_string(font, center + Vector2(-radius, 3.0), cell["label"], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, clampi(int(radius * 0.34), 10, 18), Color(0.015, 0.14, 0.16, 0.90))
+	draw_string(font, center + Vector2(-radius, 3.0), cell["label"], HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, clampi(int(radius * 0.34), 10, 18), Color(0.015, 0.14, 0.16, 0.93))
 	draw_string(font, center + Vector2(-radius, 20.0), str(int(ceil(cell["mass"]))), HORIZONTAL_ALIGNMENT_CENTER, radius * 2.0, 12, Color(0.02, 0.16, 0.20, 0.78))
 
 

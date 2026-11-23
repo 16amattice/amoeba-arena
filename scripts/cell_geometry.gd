@@ -107,14 +107,17 @@ static func world_shapes(cell: Dictionary, arena: Vector2) -> Array[PackedVector
 	var x_positive := 0.0
 	var y_negative := 0.0
 	var y_positive := 0.0
+	var normalized: Array[PackedVector2Array] = []
 	for polygon in warped:
-		for i in range(polygon.size()):
-			polygon[i] *= area_scale
-			var point: Vector2 = polygon[i]
+		var scaled := PackedVector2Array()
+		for p in polygon:
+			var point: Vector2 = p * area_scale
+			scaled.append(point)
 			x_negative = maxf(x_negative, -point.x)
 			x_positive = maxf(x_positive, point.x)
 			y_negative = maxf(y_negative, -point.y)
 			y_positive = maxf(y_positive, point.y)
+		normalized.append(scaled)
 
 	# Compress only the side pressing the wall, and expand the opposite side
 	# by the matching amount. This preserves tissue area rather than cropping.
@@ -132,7 +135,7 @@ static func world_shapes(cell: Dictionary, arena: Vector2) -> Array[PackedVector
 		top_factor = 2.0 - bottom_factor
 
 	var world: Array[PackedVector2Array] = []
-	for polygon in warped:
+	for polygon in normalized:
 		var final_points := PackedVector2Array()
 		for p in polygon:
 			var sx := left_factor if p.x < 0.0 else right_factor
