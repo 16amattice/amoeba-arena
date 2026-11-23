@@ -41,6 +41,10 @@ func _run_checks() -> void:
 	if not touches_x or not touches_y:
 		_fail("Corner body must actually touch both walls")
 		return
+	# Corners must be actually edible: no tiny diagonal hideout remains.
+	if pieces.is_empty() or not Geometry2D.is_point_in_polygon(Vector2(1.0, 1.0), pieces[0]):
+		_fail("Corner membrane must cover the actual diagonal corner")
+		return
 	var wall_area: float = CellGeometry.visible_area(wall, game.ARENA)
 	var expected_area := 400.0 * CellGeometry.AREA_PER_MASS
 	if wall_area < expected_area * 0.91 or wall_area > expected_area * 1.09:
@@ -105,6 +109,48 @@ func _run_checks() -> void:
 		_fail("Full overlap must consume every part and eliminate prey")
 		return
 
+	# Progression perks help without making cosmetics pay-to-win.
+	var old_pickup := game._pickup_bonus()
+	game.level = 9
+	if game._pickup_bonus() <= old_pickup or game._food_bonus() <= 0.0 or game._starting_mass_bonus() <= 0.0:
+		_fail("Level progression should unlock tangible passive advantages")
+		return
+	game._reset_arena()
+	if game.player["mass"] <= 100.0:
+		_fail("Level bonus should grant modest starting mass")
+		return
+	# Purchase/equip a cosmetic and save both shop and settings state.
+	game.coins = 1000
+	game.mode = "dead"
+	game._on_shop_button()
+	if game.mode != "shop":
+		_fail("Shop must open from game-over screen")
+		return
+	game._on_skin_pressed(4)
+	if game.equipped_skin != "rainbow" or not game.owned_skins.has("rainbow") or game.coins != 635:
+		_fail("Skin purchase should deduct exactly once and equip the look")
+		return
+	game._on_skin_pressed(4)
+	if game.coins != 635:
+		_fail("Equipping an owned skin should never charge again")
+		return
+	game._return_from_overlay()
+	if game.mode != "dead":
+		_fail("Leaving the shop should return to the game-over screen")
+		return
+	game.sound_enabled = false
+	game.vibration_enabled = false
+	game.light_mode = true
+	game._save_profile()
+	game.owned_skins.clear()
+	game.equipped_skin = "mint"
+	game.sound_enabled = true
+	game.vibration_enabled = true
+	game.light_mode = false
+	game._load_profile()
+	if not game.owned_skins.has("rainbow") or game.equipped_skin != "rainbow" or game.sound_enabled or game.vibration_enabled or not game.light_mode:
+		_fail("Skins and settings must survive a save/load cycle")
+		return
 	game._award(400, 15)
 	if game.level <= 1 or game.coins < 15 or game.round_xp < 400:
 		_fail("Persistent coins and XP must be awarded with level-ups")
@@ -126,7 +172,7 @@ func _run_checks() -> void:
 		_fail("Hold-the-lead win condition must award a crown")
 		return
 	game.free()
-	print("Amoeba Arena v0.3 tests passed")
+	print("Amoeba Arena v0.5 shop, progression and corner tests passed")
 	quit(0)
 
 func _fail(reason: String) -> void:

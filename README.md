@@ -86,3 +86,19 @@ Profile stored in user://amoeba_progress.cfg. Current coins/XP don't purchase an
 - Replaced hard vertex clipping at arena boundaries with a smooth, area-preserving deformation: approaching a wall flattens the side facing it and gently expands the opposite side. Corner pressure creates a slightly squarer silhouette, improving corner coverage.
 - Rendering and bite collision use exactly the same membrane coordinates; no separate clamping or stacked translucent fills at the wall.
 - Preserved the v0.3 portrait layout, cruise steering, Cell Crown win condition and locally saved XP/coins.
+
+
+## Prototype 0.5 — Corners, skins, upgrades and settings
+
+- **No corner hideouts:** A rounded cell pushing diagonally into a corner now fills the actual corner, using a single solid convex membrane. It remains edible; consumed fragments still preserve bite holes. The existing area-preserving wall squish stays in place.
+- **Player outline:** Dark outer membrane and thin bright rim, visible for all cells even against walls.
+- **Skin Lab:** Accessible on the home screen AND game-over/victory screens. Purchases use earned coins and are saved locally; owned skins can be re-equipped without paying again.
+  - Mint Jelly (free), Bubblegum (75), Arctic Glow (140), Solar Flare (215), Rainbow Flux (365), Galactic (490), Golden Crown (650).
+  - Rainbow cycles its colors; Galaxy has starlight speckles; the other skins add distinct cellular pigment effects. Cosmetics do not grant gameplay advantages.
+- **Level perks** are automatic and do not cost coins: +2 px nutrient pickup radius per level (maximum +32 px); +2% nutrient mass per level (maximum +24%); and +5 starting mass every three levels (maximum +35).
+- **Settings:** sound effects ON/OFF, vibration ON/OFF, and light/dark arena theme. All settings are saved locally. Simple sound effects are generated at runtime for collection, attacks, levels, purchases and end-of-round events.
+- The existing local coins, level, username, XP and wins remain compatible with v0.4 saves if the Android debug signature is unchanged.
+
+### Build and installation
+
+Download the APK from the latest successful GitHub Actions build. The Android export enables the VIBRATE permission to support optional haptics. The cached debug signing key is not a durable production release key; if Android rejects an update due to a signature mismatch, reinstalling will erase locally saved progression.
