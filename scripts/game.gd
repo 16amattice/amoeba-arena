@@ -13,6 +13,15 @@ const PICKUP_RADIUS = 14.0
 const CROWN_HOLD_SECONDS = 24.0
 const LEVEL_BASE_XP = 75
 const LEVEL_STEP_XP = 35
+const SKINS = [
+	{"id":"mint","name":"Mint Jelly","cost":0,"color":Color(0.26,0.94,0.78),"detail":"Classic living cell"},
+	{"id":"bubblegum","name":"Bubblegum","cost":75,"color":Color(1.0,0.46,0.71),"detail":"Candy freckles"},
+	{"id":"arctic","name":"Arctic Glow","cost":140,"color":Color(0.30,0.77,1.0),"detail":"Icy microbubbles"},
+	{"id":"solar","name":"Solar Flare","cost":215,"color":Color(1.0,0.60,0.24),"detail":"Golden sparks"},
+	{"id":"rainbow","name":"Rainbow Flux","cost":365,"color":Color(1.0,0.35,0.65),"detail":"Shifting colors"},
+	{"id":"galaxy","name":"Galactic","cost":490,"color":Color(0.47,0.30,0.80),"detail":"Starlight speckles"},
+	{"id":"gold","name":"Golden Crown","cost":650,"color":Color(0.96,0.78,0.28),"detail":"Royal shimmer"}
+]
 const CELL_COLORS = [
 	Color(0.98, 0.43, 0.56), Color(0.65, 0.55, 1.0),
 	Color(0.36, 0.74, 1.0), Color(1.0, 0.70, 0.35),
@@ -62,8 +71,24 @@ var pellet_tick := 0
 var bite_progress := 0.0
 var save_tick := 0.0
 var username := "YOU"
+var owned_skins: Array[String] = ["mint"]
+var equipped_skin := "mint"
+var sound_enabled := true
+var vibration_enabled := true
+var light_mode := false
+var shop_return_mode := "menu"
+var shop_message := ""
+var sound_player: AudioStreamPlayer
+var last_sound_time := -10.0
 var name_entry: LineEdit
 var start_button: Button
+var shop_button: Button
+var secondary_button: Button
+var back_button: Button
+var settings_sound_button: Button
+var settings_vibration_button: Button
+var settings_theme_button: Button
+var shop_buttons: Array[Button] = []
 
 
 func _ready() -> void:
@@ -73,6 +98,9 @@ func _ready() -> void:
 	_load_username()
 	_reset_arena()
 	_setup_menu_controls()
+	sound_player = AudioStreamPlayer.new()
+	sound_player.name = "ProceduralSFX"
+	add_child(sound_player)
 	set_process(true)
 
 
@@ -94,7 +122,7 @@ func _reset_arena() -> void:
 	bite_progress = 0.0
 	round_coins = 0
 	round_xp = 0
-	player = _make_cell(ARENA * 0.5, 100.0, Color(0.26, 0.94, 0.78), username, true)
+	player = _make_cell(ARENA * 0.5, 100.0 + _starting_mass_bonus(), _equipped_color(), username, true)
 	cells.append(player)
 	for n in range(BOT_COUNT):
 		_spawn_bot(n)
@@ -135,6 +163,149 @@ func _spawn_bot(number: int) -> void:
 		mass = randf_range(240.0, 470.0)
 	var bot := _make_cell(placement, mass, CELL_COLORS[number % CELL_COLORS.size()], BOT_NAMES[number % BOT_NAMES.size()], false)
 	cells.append(bot)
+
+
+func _skin_definition(id: String) -> Dictionary:
+	for skin in SKINS:
+		if skin["id"] == id:
+			return skin
+	return SKINS[0]
+
+
+func _equipped_color() -> Color:
+	return _skin_definition(equipped_skin)["color"]
+
+
+func _skin_render_color(id: String) -> Color:
+	if id == "rainbow":
+		return Color.from_hsv(fposmod(clock * 0.14, 1.0), 0.80, 0.99)
+	if id == "galaxy":
+		return Color.from_hsv(0.75 + 0.025 * sin(clock), 0.62, 0.72)
+	if id == "gold":
+		return Color(1.0, 0.71 + 0.10 * sin(clock * 3.0), 0.22)
+	return _skin_definition(id)["color"]
+
+
+func _pickup_bonus() -> float:
+	return minf(32.0, float(maxi(0, level - 1)) * 2.0)
+
+
+func _food_bonus() -> float:
+	return minf(0.24, float(maxi(0, level - 1)) * 0.02)
+
+
+func _starting_mass_bonus() -> float:
+	return minf(35.0, float((maxi(0, level - 1)) / 3) * 5.0)
+
+
+func _on_shop_button() -> void:
+	shop_return_mode = mode
+	shop_message = "Choose a look. Owned skins can be equipped for free."
+	mode = "shop"
+	_layout_menu_controls()
+
+
+func _on_secondary_button() -> void:
+	mode = "settings" if mode == "menu" else "menu"
+	_layout_menu_controls()
+
+
+func _return_from_overlay() -> void:
+	mode = shop_return_mode if mode == "shop" else "menu"
+	_layout_menu_controls()
+
+
+func _on_skin_pressed(index: int) -> void:
+	var skin: Dictionary = SKINS[index]
+	var id: String = skin["id"]
+	var price: int = skin["cost"]
+	if not owned_skins.has(id):
+		if coins < price:
+			shop_message = "Need " + str(price - coins) + " more coins for " + str(skin["name"]) + "."
+			_play_sfx("deny")
+			return
+		coins -= price
+		owned_skins.append(id)
+		shop_message = "Unlocked " + str(skin["name"]) + "!"
+		_play_sfx("buy")
+		_vibrate(45)
+	else:
+		shop_message = "Equipped " + str(skin["name"]) + "."
+	equipped_skin = id
+	if not player.is_empty():
+		player["color"] = _equipped_color()
+	_save_profile()
+	_layout_menu_controls()
+
+
+func _toggle_sound() -> void:
+	sound_enabled = not sound_enabled
+	_save_profile()
+	if sound_enabled:
+		_play_sfx("buy")
+	_layout_menu_controls()
+
+
+func _toggle_vibration() -> void:
+	vibration_enabled = not vibration_enabled
+	_save_profile()
+	if vibration_enabled:
+		_vibrate(35)
+	_layout_menu_controls()
+
+
+func _toggle_theme() -> void:
+	light_mode = not light_mode
+	_save_profile()
+	_layout_menu_controls()
+
+
+func _vibrate(milliseconds: int) -> void:
+	if vibration_enabled and OS.has_feature("mobile"):
+		Input.vibrate_handheld(milliseconds)
+
+
+func _play_sfx(kind: String) -> void:
+	if not sound_enabled or sound_player == null or clock - last_sound_time < 0.10:
+		return
+	last_sound_time = clock
+	var frequency := 680.0
+	var duration := 0.095
+	var volume := 0.21
+	match kind:
+		"bite":
+			frequency = 250.0
+			duration = 0.075
+			volume = 0.14
+		"level":
+			frequency = 930.0
+			duration = 0.19
+		"win":
+			frequency = 1080.0
+			duration = 0.28
+		"lose", "deny":
+			frequency = 185.0
+			duration = 0.20
+		"buy":
+			frequency = 830.0
+			duration = 0.15
+	var hz := 22050
+	var samples := int(float(hz) * duration)
+	var data := PackedByteArray()
+	data.resize(samples * 2)
+	for i in range(samples):
+		var t := float(i) / float(hz)
+		var envelope := pow(maxf(0.0, 1.0 - t / duration), 2.0)
+		var note := sin(TAU * frequency * t) + 0.18 * sin(TAU * frequency * 2.02 * t)
+		var sample := int(clampf(note * envelope * volume, -1.0, 1.0) * 32767.0)
+		data.encode_s16(i * 2, sample)
+	var wav := AudioStreamWAV.new()
+	wav.format = AudioStreamWAV.FORMAT_16_BITS
+	wav.mix_rate = hz
+	wav.stereo = false
+	wav.data = data
+	sound_player.stream = wav
+	sound_player.play()
 
 
 func _make_food() -> Dictionary:
@@ -199,7 +370,7 @@ func _on_name_submitted(_submitted: String) -> void:
 
 func _menu_geometry(screen: Vector2) -> Rect2:
 	var width := minf(630.0, screen.x - 32.0)
-	var height := 445.0
+	var height := 570.0
 	var top := maxf(30.0, (screen.y - height) * 0.34)
 	return Rect2((screen.x - width) * 0.5, top, width, height)
 
