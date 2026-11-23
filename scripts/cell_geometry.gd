@@ -1,102 +1,194 @@
 extends RefCounted
-## Physical amoeba geometry. Each body's polygons ARE its remaining tissue.
-## Boolean subtraction removes exactly the overlapped region. No health bar or
-## damage-per-second exists: death only occurs when the body has been consumed.
+## Amoeba geometry v0.4. An eater subtracts REAL overlapping tissue.
+## Once the survivor escapes, surface tension rounds the reduced-mass body.
+## Geometry and rendering both use the same smoothly wall-deformed polygons.
+
 const AREA_PER_MASS = 50.0
 const MIN_FRAGMENT_AREA = 3.0
 const MIN_ALIVE_MASS = 0.6
+const RING_POINTS = 64
+const RECOVER_DELAY = 0.13
+const WALL_CENTER_FRACTION = 0.78
+
 
 static func polygon_area(points: PackedVector2Array) -> float:
 	if points.size() < 3:
 		return 0.0
-	var twice_area := 0.0
+	var cross_sum := 0.0
 	for i in range(points.size()):
 		var a: Vector2 = points[i]
 		var b: Vector2 = points[(i + 1) % points.size()]
-		twice_area += a.x * b.y - b.x * a.y
-	return absf(twice_area) * 0.5
+		cross_sum += a.cross(b)
+	return absf(cross_sum) * 0.5
 
 
 static func total_area(polygons: Array[PackedVector2Array]) -> float:
-	var value := 0.0
-	for poly in polygons:
-		value += polygon_area(poly)
-	return value
+	var result := 0.0
+	for polygon in polygons:
+		result += polygon_area(polygon)
+	return result
+
+
+static func body_radius(mass: float) -> float:
+	return sqrt(maxf(1.0, mass) * AREA_PER_MASS / PI)
+
+
+static func minimum_center(mass: float) -> float:
+	return body_radius(mass) * WALL_CENTER_FRACTION
 
 
 static func initial_shapes(mass: float, seed: float) -> Array[PackedVector2Array]:
-	var radius := sqrt(maxf(1.0, mass) * AREA_PER_MASS / PI)
+	var radius := body_radius(mass)
 	var body := PackedVector2Array()
-	for i in range(64):
-		var angle := TAU * float(i) / 64.0
-		var ripple := 1.0 + 0.065 * sin(angle * 3.0 + seed) \
-				+ 0.042 * sin(angle * 5.0 - seed * 0.7) \
-				+ 0.024 * sin(angle * 7.0 + seed * 1.4)
+	for i in range(RING_POINTS):
+		var angle := TAU * float(i) / float(RING_POINTS)
+		var ripple := 1.0 + 0.028 * sin(angle * 3.0 + seed) \
+				+ 0.019 * sin(angle * 5.0 - seed * 0.7) \
+				+ 0.011 * sin(angle * 7.0 + seed * 1.4)
 		body.append(Vector2.from_angle(angle) * radius * ripple)
-	# Set mass precisely from the body's actual area, not its bounding circle.
-	var normalization := sqrt((mass * AREA_PER_MASS) / maxf(1.0, polygon_area(body)))
-	for i in range(body.size()):
-		body[i] *= normalization
+	_normalize_ring(body, mass)
 	var result: Array[PackedVector2Array] = [body]
 	return result
 
 
-static func world_poly(cell: Dictionary, polygon: PackedVector2Array, arena: Vector2) -> PackedVector2Array:
-	# The membrane actually flattens along the wall, instead of keeping the
-	# circular body away from corners. This is shared by rendering and biting.
-	var points := PackedVector2Array()
-	var center: Vector2 = cell["pos"]
-	for p in polygon:
-		var world: Vector2 = center + p
-		world.x = clampf(world.x, 0.0, arena.x)
-		world.y = clampf(world.y, 0.0, arena.y)
-		points.append(world)
-	return points
+static func _normalize_ring(polygon: PackedVector2Array, mass: float) -> void:
+	var target: float = mass * AREA_PER_MASS
+	var current := polygon_area(polygon)
+	if current <= 0.01:
+		return
+	var factor := sqrt(target / current)
+	for i in range(polygon.size()):
+		polygon[i] *= factor
+
+
+static func _squircle_coordinate(value: float, radius: float, exponent: float) -> float:
+	if absf(value) <= 0.0001:
+		return 0.0
+	# Strictly monotone: no folding, no crossing edges and no colored overlaps.
+	return signf(value) * radius * pow(absf(value) / radius, exponent)
+
+
+static func _wall_strength(center: Vector2, arena: Vector2, radius: float) -> float:
+	var nearest := minf(minf(center.x, center.y), minf(arena.x - center.x, arena.y - center.y))
+	return clampf((radius - nearest) / maxf(1.0, radius * (1.0 - WALL_CENTER_FRACTION)), 0.0, 1.0)
 
 
 static func world_shapes(cell: Dictionary, arena: Vector2) -> Array[PackedVector2Array]:
-	var result: Array[PackedVector2Array] = []
-	var shapes: Array = cell["shapes"]
-	for polygon in shapes:
-		var world := world_poly(cell, polygon, arena)
-		if world.size() >= 3 and polygon_area(world) >= MIN_FRAGMENT_AREA:
-			result.append(world)
-	return result
+	var originals: Array = cell["shapes"]
+	var center: Vector2 = cell["pos"]
+	var radius: float = body_radius(float(cell["mass"]))
+	var strength := _wall_strength(center, arena, radius)
+
+	# Round becomes subtly squarer toward a boundary. In a corner this covers
+	# much more of the corner than a circle, without chopping off its tissue.
+	var exponent := 1.0 - 0.17 * strength
+	var warped: Array[PackedVector2Array] = []
+	for original in originals:
+		if original.size() < 3:
+			continue
+		var points := PackedVector2Array()
+		for p in original:
+			points.append(Vector2(
+				_squircle_coordinate(p.x, radius, exponent),
+				_squircle_coordinate(p.y, radius, exponent)))
+		if polygon_area(points) >= MIN_FRAGMENT_AREA:
+			warped.append(points)
+	if warped.is_empty():
+		return warped
+
+	# The corner-filling deformation increases area; normalize BEFORE shaping
+	# to the wall so cells never shrink or gain mass just by touching a wall.
+	var source_area := 0.0
+	for polygon in originals:
+		source_area += polygon_area(polygon)
+	var deformed_area := total_area(warped)
+	var area_scale := sqrt(maxf(0.01, source_area) / maxf(0.01, deformed_area))
+	var x_negative := 0.0
+	var x_positive := 0.0
+	var y_negative := 0.0
+	var y_positive := 0.0
+	for polygon in warped:
+		for i in range(polygon.size()):
+			polygon[i] *= area_scale
+			var point: Vector2 = polygon[i]
+			x_negative = maxf(x_negative, -point.x)
+			x_positive = maxf(x_positive, point.x)
+			y_negative = maxf(y_negative, -point.y)
+			y_positive = maxf(y_positive, point.y)
+
+	# Compress only the side pressing the wall, and expand the opposite side
+	# by the matching amount. This preserves tissue area rather than cropping.
+	var left_factor := minf(1.0, center.x / maxf(0.001, x_negative))
+	var right_factor := minf(1.0, (arena.x - center.x) / maxf(0.001, x_positive))
+	var top_factor := minf(1.0, center.y / maxf(0.001, y_negative))
+	var bottom_factor := minf(1.0, (arena.y - center.y) / maxf(0.001, y_positive))
+	if left_factor < 1.0:
+		right_factor = 2.0 - left_factor
+	elif right_factor < 1.0:
+		left_factor = 2.0 - right_factor
+	if top_factor < 1.0:
+		bottom_factor = 2.0 - top_factor
+	elif bottom_factor < 1.0:
+		top_factor = 2.0 - bottom_factor
+
+	var world: Array[PackedVector2Array] = []
+	for polygon in warped:
+		var final_points := PackedVector2Array()
+		for p in polygon:
+			var sx := left_factor if p.x < 0.0 else right_factor
+			var sy := top_factor if p.y < 0.0 else bottom_factor
+			var transformed := center + Vector2(p.x * sx, p.y * sy)
+			# Numeric-only guard; this is not the old vertex-clipping behavior.
+			transformed.x = clampf(transformed.x, -0.005, arena.x + 0.005)
+			transformed.y = clampf(transformed.y, -0.005, arena.y + 0.005)
+			final_points.append(transformed)
+		if polygon_area(final_points) >= MIN_FRAGMENT_AREA:
+			world.append(final_points)
+	return world
+
+
+static func world_poly(cell: Dictionary, _polygon: PackedVector2Array, arena: Vector2) -> PackedVector2Array:
+	# Compatibility helper. Call world_shapes for all fragments so every
+	# piece receives the same wall deformation.
+	var shapes := world_shapes(cell, arena)
+	return shapes[0] if not shapes.is_empty() else PackedVector2Array()
 
 
 static func grow(cell: Dictionary, gain: float) -> void:
 	if gain <= 0.0 or not cell["alive"]:
 		return
 	var previous: float = maxf(0.01, cell["mass"])
-	var new_mass := previous + gain
-	var factor := sqrt(new_mass / previous)
+	var factor := sqrt((previous + gain) / previous)
 	var grown: Array[PackedVector2Array] = []
-	for polygon in cell["shapes"]:
+	for poly in cell["shapes"]:
 		var expanded := PackedVector2Array()
-		for p in polygon:
-			expanded.append(p * factor)
+		for point in poly:
+			expanded.append(point * factor)
 		grown.append(expanded)
 	cell["shapes"] = grown
-	cell["mass"] = new_mass
+	cell["mass"] = previous + gain
 
 
 static func consume(eater: Dictionary, victim: Dictionary, arena: Vector2) -> Dictionary:
-	# NOTE: clipping is in world coordinates, after each membrane was pressed
-	# against the arena's walls. Surviving shards keep their true positions.
-	var originals := world_shapes(victim, arena)
+	var subjects := world_shapes(victim, arena)
 	var cutters := world_shapes(eater, arena)
-	var original_area := total_area(originals)
+	var original_area := total_area(subjects)
 	if original_area <= MIN_FRAGMENT_AREA or cutters.is_empty():
 		return {"mass": 0.0, "dead": false, "position": victim["pos"]}
+
 	var surviving: Array[PackedVector2Array] = []
-	for subject in originals:
+	var eaten_area := 0.0
+	for subject in subjects:
 		var fragments: Array[PackedVector2Array] = [subject]
 		for cutter in cutters:
 			var next_fragments: Array[PackedVector2Array] = []
 			for fragment in fragments:
-				# This is geometric subtraction, not gradual health damage.
-				var difference := Geometry2D.clip_polygons(fragment, cutter)
-				for piece in difference:
+				# Intersection area is the precise eaten tissue. In particular,
+				# subtracting an internal overlap is counted even if the polygon
+				# difference returns a reversed-winding hole contour.
+				for intersection in Geometry2D.intersect_polygons(fragment, cutter):
+					eaten_area += polygon_area(intersection)
+				for piece in Geometry2D.clip_polygons(fragment, cutter):
 					if piece.size() >= 3 and polygon_area(piece) >= MIN_FRAGMENT_AREA:
 						next_fragments.append(piece)
 			fragments = next_fragments
@@ -104,46 +196,133 @@ static func consume(eater: Dictionary, victim: Dictionary, arena: Vector2) -> Di
 				break
 		surviving.append_array(fragments)
 
-	var remaining_area := total_area(surviving)
-	var eaten_area := maxf(0.0, original_area - remaining_area)
-	if eaten_area < 0.25:
+	eaten_area = minf(eaten_area, original_area)
+	if eaten_area <= 0.25:
 		return {"mass": 0.0, "dead": false, "position": victim["pos"]}
-
-	var previous_mass: float = victim["mass"]
-	var eaten_mass: float = previous_mass * clampf(eaten_area / original_area, 0.0, 1.0)
-	var new_mass := maxf(0.0, previous_mass - eaten_mass)
-	if new_mass <= MIN_ALIVE_MASS or surviving.is_empty():
+	var mass_before: float = victim["mass"]
+	var taken := mass_before * eaten_area / original_area
+	var left := maxf(0.0, mass_before - taken)
+	if left <= MIN_ALIVE_MASS or surviving.is_empty():
 		victim["mass"] = 0.0
-		victim["shapes"] = []
 		victim["alive"] = false
-		return {"mass": previous_mass, "dead": true, "position": victim["pos"]}
+		victim["shapes"] = []
+		return {"mass": mass_before, "dead": true, "position": victim["pos"]}
 
-	# Keep every surviving piece, including separated shards. Don't silently
-	# round them away or reconstruct the victim as a smaller circle.
 	var weighted_center := Vector2.ZERO
 	var total_weight := 0.0
-	for polygon in surviving:
-		var area := polygon_area(polygon)
-		var center := Vector2.ZERO
-		for vertex in polygon:
-			center += vertex
-		center /= float(polygon.size())
-		weighted_center += center * area
+	for poly in surviving:
+		var area := polygon_area(poly)
+		var c := Vector2.ZERO
+		for point in poly:
+			c += point
+		c /= float(poly.size())
+		weighted_center += c * area
 		total_weight += area
 	if total_weight > 0.0:
 		weighted_center /= total_weight
 	else:
 		weighted_center = victim["pos"]
-	var local_shapes: Array[PackedVector2Array] = []
-	for polygon in surviving:
-		var local := PackedVector2Array()
-		for vertex in polygon:
-			local.append(vertex - weighted_center)
-		local_shapes.append(local)
+	var local: Array[PackedVector2Array] = []
+	for poly in surviving:
+		var points := PackedVector2Array()
+		for point in poly:
+			points.append(point - weighted_center)
+		local.append(points)
 	victim["pos"] = weighted_center
-	victim["shapes"] = local_shapes
-	victim["mass"] = new_mass
-	return {"mass": eaten_mass, "dead": false, "position": weighted_center}
+	victim["shapes"] = local
+	victim["mass"] = left
+	victim["needs_reform"] = true
+	victim["reform_delay"] = RECOVER_DELAY
+	return {"mass": taken, "dead": false, "position": weighted_center}
+
+
+static func _radialize(cell: Dictionary) -> void:
+	var shapes: Array = cell["shapes"]
+	if shapes.is_empty():
+		return
+	# Put origin inside the largest surviving piece, if the bite removed the
+	# original center. This keeps the recovery ring simple and non-self-crossing.
+	var inside := false
+	for poly in shapes:
+		if Geometry2D.is_point_in_polygon(Vector2.ZERO, poly):
+			inside = true
+			break
+	if not inside:
+		var largest_area := -1.0
+		var shift := Vector2.ZERO
+		for poly in shapes:
+			var area := polygon_area(poly)
+			if area > largest_area:
+				largest_area = area
+				shift = Vector2.ZERO
+				for point in poly:
+					shift += point
+				shift /= float(poly.size())
+		var translated: Array[PackedVector2Array] = []
+		for poly in shapes:
+			var shifted := PackedVector2Array()
+			for point in poly:
+				shifted.append(point - shift)
+			translated.append(shifted)
+		cell["pos"] += shift
+		cell["shapes"] = translated
+		shapes = translated
+
+	var radius := body_radius(float(cell["mass"]))
+	var ring := PackedVector2Array()
+	for i in range(RING_POINTS):
+		var direction := Vector2.from_angle(TAU * float(i) / float(RING_POINTS))
+		var nearest := INF
+		for poly in shapes:
+			for j in range(poly.size()):
+				var a: Vector2 = poly[j]
+				var b: Vector2 = poly[(j + 1) % poly.size()]
+				var edge := b - a
+				var det := direction.cross(edge)
+				if absf(det) < 0.00001:
+					continue
+				var travel := a.cross(edge) / det
+				var u := a.cross(direction) / det
+				if travel >= 0.0 and u >= 0.0 and u <= 1.0:
+					nearest = minf(nearest, travel)
+		var distance := radius * 0.30 if is_inf(nearest) else clampf(nearest, radius * 0.14, radius * 2.0)
+		ring.append(direction * distance)
+	_normalize_ring(ring, float(cell["mass"]))
+	var new_shapes: Array[PackedVector2Array] = [ring]
+	cell["shapes"] = new_shapes
+	cell["needs_reform"] = false
+
+
+static func relax(cell: Dictionary, delta: float) -> void:
+	# After a bite, preserve the genuine cut edge for a moment. Then pull its
+	# remaining membrane into a 64-point ring and smoothly round it.
+	if not cell["alive"]:
+		return
+	if cell.get("needs_reform", false):
+		cell["reform_delay"] = float(cell.get("reform_delay", RECOVER_DELAY)) - delta
+		if float(cell["reform_delay"]) > 0.0:
+			return
+		_radialize(cell)
+
+	var shapes: Array = cell["shapes"]
+	if shapes.size() != 1:
+		return
+	var poly: PackedVector2Array = shapes[0]
+	if poly.size() != RING_POINTS:
+		return
+	var radius := body_radius(float(cell["mass"]))
+	var phase: float = cell.get("phase", 0.0)
+	var factor := 1.0 - exp(-delta * 7.5)
+	for i in range(RING_POINTS):
+		var angle := TAU * float(i) / float(RING_POINTS)
+		var desired := radius * (1.0
+			+ 0.028 * sin(angle * 3.0 + phase)
+			+ 0.020 * sin(angle * 5.0 - phase * 0.8)
+			+ 0.012 * sin(angle * 7.0 + phase * 1.7))
+		var now: float = poly[i].length()
+		poly[i] = Vector2.from_angle(angle) * lerpf(now, desired, factor)
+	_normalize_ring(poly, float(cell["mass"]))
+	cell["shapes"] = [poly]
 
 
 static func visible_area(cell: Dictionary, arena: Vector2) -> float:
