@@ -171,19 +171,33 @@ static func _fill_corner(points: PackedVector2Array, center: Vector2, arena: Vec
 	var alpha_x := clampf((radius * 0.86 - dx) / maxf(1.0, radius * 0.08), 0.0, 1.0)
 	var alpha_y := clampf((radius * 0.86 - dy) / maxf(1.0, radius * 0.08), 0.0, 1.0)
 	var alpha := minf(alpha_x, alpha_y)
-	if alpha <= 0.001:
+	if alpha <= 0.001 or points.size() < 8:
 		return points
-	var closest := points[0]
-	var dist := INF
-	for point in points:
-		var candidate: float = point.distance_squared_to(corner)
-		if candidate < dist:
-			dist = candidate
-			closest = point
+	var nearest_index := 0
+	var nearest_distance := INF
+	for i in range(points.size()):
+		var d := points[i].distance_squared_to(corner)
+		if d < nearest_distance:
+			nearest_distance = d
+			nearest_index = i
+
+	# No convex hull and no rebuilding the body as a square. Preserve its
+	# original vertex order and blend the corner into the nearby membrane.
 	var output := points.duplicate()
-	output.append(closest.lerp(corner, alpha))
-	# This creates a solid, edible corner lobe with no separate layered tint.
-	return Geometry2D.convex_hull(output)
+	var count := points.size()
+	var delta: Vector2 = (corner - points[nearest_index]) * alpha
+	for step in range(-3, 4):
+		var index := posmod(nearest_index + step, count)
+		var weight := 1.0
+		match abs(step):
+			1:
+				weight = 0.54
+			2:
+				weight = 0.18
+			3:
+				weight = 0.04
+		output[index] = (points[index] + delta * weight).clamp(Vector2.ZERO, arena)
+	return output
 
 
 static func world_poly(cell: Dictionary, _polygon: PackedVector2Array, arena: Vector2) -> PackedVector2Array:

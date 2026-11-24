@@ -45,6 +45,10 @@ func _run_checks() -> void:
 	if pieces.is_empty() or not Geometry2D.is_point_in_polygon(Vector2(1.0, 1.0), pieces[0]):
 		_fail("Corner membrane must cover the actual diagonal corner")
 		return
+	# A real corner can be occupied without replacing the ring with a hull.
+	if pieces[0].size() != CellGeometry.RING_POINTS:
+		_fail("Corner fill must preserve the circular membrane vertex count")
+		return
 	var wall_area: float = CellGeometry.visible_area(wall, game.ARENA)
 	var expected_area := 400.0 * CellGeometry.AREA_PER_MASS
 	if wall_area < expected_area * 0.91 or wall_area > expected_area * 1.09:
@@ -70,6 +74,16 @@ func _run_checks() -> void:
 	if CellGeometry.visible_area(victim, game.ARENA) >= original_area:
 		_fail("Physical remaining shape must lose actual visible area")
 		return
+	# In the middle of the arena, partial eating must not accidentally invoke
+	# the corner-filling hull or reconstruct the cell as a rectangle.
+	var origin := Vector2(800.0, 800.0)
+	if victim["pos"].distance_to(origin) > 95.0:
+		_fail("Bite geometry should stay local to the surviving tissue")
+		return
+	for fragment in CellGeometry.world_shapes(victim, game.ARENA):
+		if fragment.size() == 4:
+			_fail("Partial eating should not rebuild a player as a 4-corner square")
+			return
 	for remaining in CellGeometry.world_shapes(victim, game.ARENA):
 		for covered in CellGeometry.world_shapes(eater, game.ARENA):
 			for overlap in Geometry2D.intersect_polygons(remaining, covered):
@@ -172,7 +186,7 @@ func _run_checks() -> void:
 		_fail("Hold-the-lead win condition must award a crown")
 		return
 	game.free()
-	print("Amoeba Arena v0.5 shop, progression and corner tests passed")
+	print("Amoeba Arena v0.7 classic restoration tests passed")
 	quit(0)
 
 func _fail(reason: String) -> void:

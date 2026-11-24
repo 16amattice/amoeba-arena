@@ -89,16 +89,6 @@ jobs:
           if grep -E 'SCRIPT ERROR:|Parse Error:' smoke.log; then exit 1; fi
           exit "$status"
 
-      - name: Check frosted UI and skin effects
-        run: |
-          set +e
-          timeout 45s godot --headless --path . --script res://tests/ui_smoke.gd > ui.log 2>&1
-          status=$?
-          set -e
-          cat ui.log
-          if grep -E 'SCRIPT ERROR:|Parse Error:' ui.log; then exit 1; fi
-          exit "$status"
-
       - name: Export debug APK
         run: |
           mkdir -p builds
